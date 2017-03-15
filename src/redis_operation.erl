@@ -3,8 +3,42 @@
 -include("redis_operation.hrl").
 
 %% API
--export([do_operation/3]).
+-export([enter_loop/3]).
 -export([get/1]).
+
+
+%% socket state
+-record(state, {
+    socket :: inet:socket(),
+    peername :: {inet:ip_address(), non_neg_integer()},
+    transport :: module(),
+    database = redis_mnesia_table0 :: atom(),
+    trans = false :: boolean(),
+    error = false :: boolean(),
+    dirty = false :: boolean(),
+    wlist = []:: list(),
+    optlist = []:: [{atom(), [binary()]}]
+}).
+
+enter_loop(Socket, Peername, Transport) ->
+    loop(#state{socket=Socket, peername=Peername, transport=Transport}).
+
+loop(State = #state{socket=Socket, transport=Transport}) ->
+    receive
+        {tcp, Socket, Data} ->
+            {_Num, Cmd, Param} = redis_parser:parse_data(Data),
+            io:format("Recive data: ~p, peername: ~p~n", [Data, State#state.peername]),
+            io:format("Recive command: ~p ~p ~p~n", [Cmd, _Num, Param]),
+            {Reply, NewState} = do_operation(Cmd, Param, State),
+            Transport:send(Socket, Reply),
+            Transport:setopts(Socket, [{active, once}]),
+            loop(NewState);
+        {tcp_closed, Socket} ->
+            ok = Transport:close(Socket);
+        _ ->
+            ok = Transport:close(Socket)
+    end.
+
 
 %% do operation
 do_operation(Cmd, Param, State) ->
@@ -69,3 +103,4 @@ do_transaction(Cmd, Param, State=#state{trans=_, wlist=_Wlist, optlist=OptList})
 %% operation
 get(_List) ->
     redis_parser:reply_single(<<"def">>).
+

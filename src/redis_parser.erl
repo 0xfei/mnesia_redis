@@ -43,6 +43,8 @@ reply_integer(Number) when is_integer(Number) ->
     Bin = integer_to_binary(Number),
     <<$:, Bin/binary, $\r, $\n>>.
 
+reply_single(<<>>) ->
+    <<"$-1\r\n">>;
 reply_single(Data) when is_binary(Data) ->
     Num = byte_size(Data) + $0,
     <<$$, Num/integer, $\r, $\n, Data/binary, $\r, $\n>>.
