@@ -5,6 +5,7 @@
 -export([stop/1]).
 
 start(_Type, _Args) ->
+	mnesia_start(),
 	{ok, _} = ranch:start_listener(
 		?MODULE,
 		100,
@@ -17,3 +18,7 @@ start(_Type, _Args) ->
 
 stop(_State) ->
 	ok.
+
+mnesia_start() ->
+	ok.
+	% ok = mnesia:create_schema([node()]).

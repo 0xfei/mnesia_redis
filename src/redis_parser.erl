@@ -2,42 +2,24 @@
 
 -include("redis_operation.hrl").
 
--record(redis_param, {
-    cmd :: string(),        %% command
-    num :: integer(),       %% param number
-    param :: [binary()]     %% parameters
-}).
-
--compile(export_all).
-
-%% API
--export([execute/1]).
-
-%% execute
--spec execute(Data::binary()) ->
-    Reply::binary().
-execute(Data) when is_binary(Data) ->
-    #redis_param{cmd = Cmd, num = _Num, param = Param} = parse_data(Data),
-    try binary_to_existing_atom(Cmd, latin1) of
-        Func ->
-            case erlang:function_exported(redis_operation, Func, 1) of
-                false ->
-                    reply_error(<<"ERR unknown command '", Cmd/binary,  "' ">>);
-                true ->
-                    redis_operation:Func(Param)
-            end
-    catch
-        _Error:_Code ->
-            reply_error(<<"ERR unknown command '", Cmd/binary,  "' ">>)
-    end.
-
+-export([
+    parse_data/1,
+    reply_error/1,
+    reply_integer/1,
+    reply_status/1,
+    reply_single/1,
+    reply_multi/1,
+    lower_binary/1]
+).
 
 %% parse data
+%% todo:
+%% support telnet data, and other data
 -spec parse_data(Data::binary()) ->
-    Param::#redis_param{}.
+    {Cmd::binary(), Num::integer(), Param::[binary()]}.
 parse_data(<<$*, Num/integer, $\r, $\n, Data/binary>>) when Num > $0, Num =< $9 ->
     [Cmd|Param] = parse_param(Data, Num - $0, []),
-    #redis_param{num = Num - $1, cmd = Cmd, param = Param}.
+    {Num - $1, lower_binary(Cmd), Param}.
 
 -spec parse_param(Data::binary(), Count::integer(), Result::[binary()]) ->
     Result::[binary()].
@@ -80,16 +62,24 @@ reply_multi([], Number, Result) ->
         Result/binary
     >>;
 reply_multi([H|T], Count, Result) ->
-    Size = byte_size(H) + $0,
     reply_multi(
         T,
         Count+1,
         <<
             Result/binary,
-            $$,
-            Size/integer,
-            $\r, $\n,
-            H/binary,
-            $\r, $\n
+            H/binary
         >>
     ).
+
+%% <<"ABC">> -> <<"abc">>
+-spec lower_binary(Data::binary()) -> New::binary().
+lower_binary(Data) ->
+    lower_binary(Data, <<>>).
+
+lower_binary(<<>>, Binary) ->
+    Binary;
+lower_binary(<<H:8, Left/binary>>, Binary) when H >= $A andalso H =< $Z ->
+    T = H - $A + $a,
+    lower_binary(Left, <<Binary/binary, T:8>>);
+lower_binary(<<H:8, Left/binary>>, Binary) ->
+    lower_binary(Left, <<Binary/binary, H:8>>).
