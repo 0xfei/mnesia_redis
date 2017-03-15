@@ -24,8 +24,7 @@ execute(Data) when is_binary(Data) ->
                 false ->
                     reply_error(<<"ERR unknown command '", Cmd/binary,  "' ">>);
                 true ->
-                    redis_operation:Func(Param),
-                    reply_integer(123)
+                    redis_operation:Func(Param)
             end
     catch
         _Error:_Code ->
@@ -86,11 +85,11 @@ reply_multi([H|T], Count, Result) ->
         T,
         Count+1,
         <<
+            Result/binary,
             $$,
             Size/integer,
             $\r, $\n,
             H/binary,
-            $\r, $\n,
-            Result/binary
+            $\r, $\n
         >>
     ).

@@ -9,6 +9,7 @@
 
 -record(state, {
 	socket :: inet:socket(),
+    peername :: {inet:ip_address(), non_neg_integer()},
 	transport :: module()
 }).
 
@@ -18,11 +19,13 @@ start_link(Ref, Socket, Transport, Opts) ->
 
 -spec init(ranch:ref(), inet:socket(), module(), opts()) -> ok.
 init(Ref, Socket, Transport, _Opts) ->
+    {ok, PeerName} = inet:peername(Socket),
+    ok = check_peername(PeerName),
 	ok = ranch:accept_ack(Ref),
-	loop(#state{socket=Socket, transport=Transport}).
+	loop(#state{socket=Socket, peername=PeerName, transport=Transport}).
 
 loop(State = #state{socket=Socket, transport=Transport}) ->
-	case Transport:recv(Socket, 0, 10000) of
+	case Transport:recv(Socket, 0, infinity) of
 		{ok, Data} ->
             io:format("Recive data: ~p, peername: ~p~n",
                 [Data, Transport:peername(Socket)]),
@@ -32,3 +35,7 @@ loop(State = #state{socket=Socket, transport=Transport}) ->
 		_ ->
 			ok = Transport:close(Socket)
 	end.
+
+%% check peername
+check_peername({_Address, _Port}) ->
+    ok.

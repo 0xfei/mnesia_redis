@@ -4,4 +4,4 @@
 -export([get/1]).
 
 get(_List) ->
-    io:format("get called~n").
+    redis_parser:reply_multi([<<"test">>, <<"abc">>, <<"def">>]).
