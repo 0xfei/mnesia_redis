@@ -156,7 +156,7 @@ set(_, _, _) ->
 rpush(Database, N, [Key | Left]) when N > 1 ->
     try mnesia:dirty_read({Database, Key}) of
         [{Database, Key, [M|Value]}] when is_integer(M) ->
-            mnesia:dirty_write({Database, Key, [N+M-1|Value++Left]}),
+            mnesia:dirty_write({Database, Key, [N-1+M|Value ++ Left]}),
             redis_parser:reply_integer(N-1+M);
         [] ->
             mnesia:dirty_write({Database, Key, [N-1|Left]}),

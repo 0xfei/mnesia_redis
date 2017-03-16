@@ -17,16 +17,17 @@
 %%       parameters longer than 10
 -spec parse_data(Data::binary()) ->
     {Cmd::binary(), Num::integer(), Param::[binary()]}.
-parse_data(<<$*, Num/integer, $\r, $\n, Data/binary>>) when Num > $0, Num =< $9 ->
-    [Cmd|Param] = parse_param(Data, Num - $0, []),
-    {Num - $1, lower_binary(Cmd), Param}.
+parse_data(<<$*, Num/integer, Data/binary>>) when Num > $0 andalso Num =< $9 ->
+    {Number, Binary} = find_number(Data, Num-$0),
+    [Cmd|Param] = parse_param(Binary, Number, []),
+    {Number - 1, lower_binary(Cmd), Param}.
 
 -spec parse_param(Data::binary(), Count::integer(), Result::[binary()]) ->
     Result::[binary()].
 parse_param(<<>>, 0, Result) ->
     lists:reverse(Result);
-parse_param(<<$$, Num/integer, $\r, $\n, Binary/binary>>, Count, Result) ->
-    Number = Num - $0,
+parse_param(<<$$, Num/integer, Data/binary>>, Count, Result) when Num > $0 andalso Num =< $9 ->
+    {Number, Binary} = find_number(Data, Num-$0),
     <<Param:Number/binary, $\r, $\n, Left/binary>> = Binary,
     parse_param(Left, Count-1, [Param | Result]).
 
@@ -46,8 +47,8 @@ reply_integer(Number) when is_integer(Number) ->
 reply_single(<<>>) ->
     <<"$-1\r\n">>;
 reply_single(Data) when is_binary(Data) ->
-    Num = byte_size(Data) + $0,
-    <<$$, Num/integer, $\r, $\n, Data/binary, $\r, $\n>>.
+    Num = integer_to_binary(byte_size(Data)),
+    <<$$, Num/binary, $\r, $\n, Data/binary, $\r, $\n>>.
 
 reply_multi(List) ->
     reply_multi(List, 0, <<>>).
@@ -56,10 +57,10 @@ reply_multi(List) ->
 %% internal implement
 
 reply_multi([], Number, Result) ->
-    Num = Number + $0,
+    Num = integer_to_binary(Number),
     <<
         $*,
-        Num/integer,
+        Num/binary,
         $\r, $\n,
         Result/binary
     >>;
@@ -85,3 +86,12 @@ lower_binary(<<H:8, Left/binary>>, Binary) when H >= $A andalso H =< $Z ->
     lower_binary(Left, <<Binary/binary, T:8>>);
 lower_binary(<<H:8, Left/binary>>, Binary) ->
     lower_binary(Left, <<Binary/binary, H:8>>).
+
+
+%% find_number <<"123dfasdfasd">> -> {123, Binary}
+-spec find_number(Data::binary(), Initialize::integer()) ->
+    {Number::integer(), Bin::binary()}.
+find_number(<<Num/integer, Data/binary>>, Now) when Num > $0 andalso Num =< $9 ->
+    find_number(Data, Now*10+Num-$0);
+find_number(<<$\r, $\n, Data/binary>>, Now) ->
+    {Now, Data}.
