@@ -13,8 +13,8 @@
 ).
 
 %% parse data
-%% todo:
-%% support telnet data, and other data
+%% todo: support telnet data, and other data
+%%       parameters longer than 10
 -spec parse_data(Data::binary()) ->
     {Cmd::binary(), Num::integer(), Param::[binary()]}.
 parse_data(<<$*, Num/integer, $\r, $\n, Data/binary>>) when Num > $0, Num =< $9 ->

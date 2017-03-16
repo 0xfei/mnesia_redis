@@ -6,7 +6,7 @@
 -export([enter_loop/3]).
 -export([del/3]).
 -export([get/3, set/3]).
--export([rpush/3, lpop/3]).
+-export([rpush/3, lpop/3, lindex/3, lrange/3]).
 
 
 %% socket state
@@ -177,7 +177,7 @@ lpop(Database, 1, [Key]) ->
         [{Database, Key, [1 , H]}] ->
             mnesia:dirty_delete({Database, Key}),
             redis_parser:reply_single(H);
-        [{Database, Key, [M, H | Value]}] ->
+        [{Database, Key, [M, H | Value]}] when is_integer(M)->
             mnesia:dirty_write({Database, Key, [M-1 | Value]}),
             redis_parser:reply_single(H);
         _ ->
@@ -190,5 +190,67 @@ lpop(_, _, _) ->
     redis_parser:reply_error(<<"ERR wrong number of arguments for 'rpop' command">>).
 
 %% lindex
+lindex(Database, 2, [Key, SIndex]) ->
+    try
+        _ = binary_to_integer(SIndex),
+        mnesia:dirty_read({Database, Key})
+    of
+        [{Database, Key, [M | List]}] when is_integer(M) ->
+            Index = binary_to_integer(SIndex),
+            H = if
+                    Index < 0 andalso Index + M >= 0 ->
+                        lists:nth(M + Index + 1, List);
+                    M > Index ->
+                        lists:nth(Index + 1, List);
+                    true ->
+                        <<>>
+                end,
+            redis_parser:reply_single(H);
+        _ ->
+            redis_parser:reply_single(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+lindex(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'lindex' command">>).
 
 %% lrange
+lrange(Database, 3, [Key, Start, End]) ->
+    try
+        _ = binary_to_integer(Start),
+        _ = binary_to_integer(End),
+        mnesia:dirty_read({Database, Key})
+    of
+        [{Database, Key, [M | List]}] when is_integer(M) ->
+            _Index = binary_to_integer(Start),
+            S = if
+                    _Index < 0 andalso _Index + M >= 0 ->
+                        M + _Index + 1;
+                    true ->
+                        _Index + 1
+                end,
+            _Index2 = binary_to_integer(End),
+            T = if
+                    _Index2 < 0 andalso _Index2 + M >= 0 ->
+                        M + _Index2 + 1;
+                    true ->
+                        _Index2 + 1
+                end,
+            if
+                S =< T andalso T =< M ->
+                    redis_parser:reply_multi(
+                        [redis_parser:reply_single(K) ||
+                            K <- lists:sublist(List, S, T-S+1)]
+                    );
+                true ->
+                    redis_parser:reply_single(<<>>)
+            end;
+        _ ->
+            redis_parser:reply_single(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+lrange(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'lrange' command">>).
