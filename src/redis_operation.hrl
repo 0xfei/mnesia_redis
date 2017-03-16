@@ -3,5 +3,8 @@
 
 %% operation
 -define(GET, get).
+-define(SET, set).
+-define(DEL, del).
+
 
 -endif.
