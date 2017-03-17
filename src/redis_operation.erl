@@ -11,6 +11,7 @@
 -export([get/3, set/3]).
 -export([rpush/3, lpop/3, lindex/3, lrange/3]).
 -export([sadd/3, sismember/3, smembers/3, srem/3]).
+-export([hget/3, hset/3, hexists/3, hgetall/3, hdel/3]).
 
 %% socket state
 -record(state, {
@@ -327,3 +328,123 @@ srem(Database, N, [Key|Value]) when N > 1->
     end;
 srem(_, _, _) ->
     redis_parser:reply_error(<<"ERR wrong number of arguments for 'srem' command">>).
+
+
+%%
+%% hash map
+%%
+
+%% hset
+hset(Database, 3, [Key, K, V]) ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, Map}] ->
+                N = case maps:is_key(K, Map) of
+                        true ->
+                            0;
+                        _ ->
+                            1
+                    end,
+                mnesia:dirty_write({Database, Key, maps:put(K, V, Map)}),
+                redis_parser:reply_integer(N);
+            [] ->
+                mnesia:dirty_write({Database, Key, maps:put(K, V, maps:new())}),
+                redis_parser:reply_integer(1);
+            _ ->
+                redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+hset(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'hset' command">>).
+
+%% hget
+hget(Database, 2, [Key, K]) ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, Map}] ->
+                N = case maps:is_key(K, Map) of
+                        true ->
+                            maps:get(K, Map);
+                        _ ->
+                            <<>>
+                    end,
+                redis_parser:reply_single(N);
+            [] ->
+                redis_parser:reply_single(<<>>);
+            _ ->
+                redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+hget(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'hget' command">>).
+
+
+%% hexists
+hexists(Database, 2, [Key, K]) ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, Map}] ->
+                case maps:is_key(K, Map) of
+                    true ->
+                        redis_parser:reply_integer(1);
+                    _ ->
+                        redis_parser:reply_integer(0)
+                end;
+            [] ->
+                redis_parser:reply_integer(0);
+            _ ->
+                redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+hexists(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'hexists' command">>).
+
+%% hgetall
+hgetall(Database, 1, [Key]) ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, Map}] ->
+                redis_parser:reply_multi(
+                    lists:flatten(
+                        [[redis_parser:reply_single(K), redis_parser:reply_single(V)] ||
+                            {K, V} <- maps:to_list(Map)]));
+            [] ->
+                redis_parser:reply_multi([], 0, <<>>);
+            _ ->
+                redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+hgetall(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'hgetall' command">>).
+
+%% hdel
+hdel(Database, N, [Key|Value]) when N > 1->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, Map}] ->
+                {Number, NewMap} = redis_help:remove_hash(Value, Map, 0),
+                mnesia:dirty_write({Database, Key, NewMap}),
+                redis_parser:reply_integer(Number);
+            [] ->
+                redis_parser:reply_integer(0);
+            _ ->
+                redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+hdel(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'hdel' command">>).

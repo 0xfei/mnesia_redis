@@ -4,7 +4,8 @@
 -export([
     lower_binary/1, find_number/2,
     join_list/2, calc_index/2,
-    add_elements/3, remove_elements/3]
+    add_elements/3, remove_elements/3,
+    remove_hash/3]
 ).
 
 -define(LIMIT_MAX, 999999).
@@ -80,4 +81,17 @@ remove_elements([H|T], Set, N) ->
             remove_elements(T, sets:del_element(H, Set), N+1);
         _ ->
             remove_elements(T, Set, N)
+    end.
+
+%% remove hash
+-spec remove_hash(E::list(), Set::#{}, N::integer()) ->
+    NSet::#{}.
+remove_hash([], Map, N) ->
+    {N, Map};
+remove_hash([H|T], Map, N) ->
+    case maps:is_key(H, Map) of
+        true ->
+            remove_hash(T, maps:remove(H, Map), N+1);
+        _ ->
+            remove_hash(T, Map, N)
     end.
