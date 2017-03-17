@@ -1,7 +1,5 @@
 %%
-%% todo: 
-%%	replace List++ListB by join two list with a fun
-%%	move help function to another file
+%% todo:
 %%
 -module(redis_operation).
 
@@ -34,8 +32,7 @@ loop(State = #state{socket=Socket, transport=Transport}) ->
     receive
         {tcp, Socket, Data} ->
             {Num, Cmd, Param} = redis_parser:parse_data(Data),
-            io:format("Recive data: ~p, peername: ~p~n", [Data, State#state.peername]),
-            io:format("Recive command: ~p ~p ~p~n", [Cmd, Num, Param]),
+            io:format("Recive command from ~p: ~p ~p ~p~n", [State#state.peername, Cmd, Num, Param]),
             {Reply, NewState} = do_operation(Cmd, Num, Param, State),
             Transport:send(Socket, Reply),
             Transport:setopts(Socket, [{active, once}]),
@@ -49,22 +46,19 @@ loop(State = #state{socket=Socket, transport=Transport}) ->
 
 %% do operation
 do_operation(Cmd, Num, Param, State=#state{database=Database}) ->
-    try binary_to_existing_atom(Cmd, latin1) of
-        Func ->
-            try erlang:function_exported(redis_operation, Func, 3) of
-                false ->
-                    {redis_parser:reply_error(<<"ERR unknown command '", Cmd/binary,  "' ">>), State};
-                true ->
-                    case do_transaction(Func, Num, Param, State) of
-                        {ok, old} ->
-                            {redis_operation:Func(Database, Num, Param), State};
-                        {ok, new, Reply, NewState} ->
-                            {Reply, NewState}
-                    end
-            catch
-                _Error:_Code ->
-                    {redis_parser:reply_error(<<"ERR unknown command '", Cmd/binary,  "' ">>), State}
-            end
+    try
+        Func = binary_to_existing_atom(Cmd, latin1),
+        case erlang:function_exported(redis_operation, Func, 3) of
+            false ->
+                {redis_parser:reply_error(<<"ERR unknown command '", Cmd/binary,  "' ">>), State};
+            true ->
+                case do_transaction(Func, Num, Param, State) of
+                    {ok, old} ->
+                        {redis_operation:Func(Database, Num, Param), State};
+                    {ok, new, Reply, NewState} ->
+                        {Reply, NewState}
+                end
+        end
     catch
         _Error:_Code ->
             {redis_parser:reply_error(<<"ERR unknown command '", Cmd/binary,  "' ">>), State}
@@ -80,7 +74,7 @@ do_transaction(Cmd, _Num, Param, State=#state{trans=false, wlist=Wlist}) ->
         multi ->
             {ok, new, redis_parser:reply_status(<<"OK">>), State#state{trans=true}};
         watch ->
-            {ok, new, redis_parser:reply_status(<<"OK">>), State#state{wlist=Param++Wlist}};
+            {ok, new, redis_parser:reply_status(<<"OK">>), State#state{wlist=redis_help:join_list(Param,Wlist)}};
         unwatch ->
             {ok, new, redis_parser:reply_status(<<"OK">>), State#state{wlist=[]}};
         exec ->
@@ -161,7 +155,7 @@ set(_, _, _) ->
 rpush(Database, N, [Key | Left]) when N > 1 ->
     try mnesia:dirty_read({Database, Key}) of
         [{Database, Key, [M|Value]}] when is_integer(M) ->
-            mnesia:dirty_write({Database, Key, [N-1+M|Value ++ Left]}),
+            mnesia:dirty_write({Database, Key, [N-1+M|redis_help:join_list(Value,Left)]}),
             redis_parser:reply_integer(N-1+M);
         [] ->
             mnesia:dirty_write({Database, Key, [N-1|Left]}),
@@ -197,22 +191,13 @@ lpop(_, _, _) ->
 %% lindex
 lindex(Database, 2, [Key, SIndex]) ->
     try
-        _ = binary_to_integer(SIndex),
-        mnesia:dirty_read({Database, Key})
-    of
-        [{Database, Key, [M | List]}] when is_integer(M) ->
-            Index = binary_to_integer(SIndex),
-            H = if
-                    Index < 0 andalso Index + M >= 0 ->
-                        lists:nth(M + Index + 1, List);
-                    M > Index ->
-                        lists:nth(Index + 1, List);
-                    true ->
-                        <<>>
-                end,
-            redis_parser:reply_single(H);
-        _ ->
-            redis_parser:reply_single(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, [M | List]}] when is_integer(M) ->
+                Index = redis_help:calc_index(SIndex, M),
+                redis_parser:reply_single(lists:nth(Index, List));
+            _ ->
+                redis_parser:reply_single(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
     catch
         _:_ ->
             redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
@@ -223,36 +208,21 @@ lindex(_, _, _) ->
 %% lrange
 lrange(Database, 3, [Key, Start, End]) ->
     try
-        _ = binary_to_integer(Start),
-        _ = binary_to_integer(End),
-        mnesia:dirty_read({Database, Key})
-    of
-        [{Database, Key, [M | List]}] when is_integer(M) ->
-            _Index = binary_to_integer(Start),
-            S = if
-                    _Index < 0 andalso _Index + M >= 0 ->
-                        M + _Index + 1;
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, [M | List]}] when is_integer(M) ->
+                S = redis_help:calc_index(Start, M),
+                T = redis_help:calc_index(End, M),
+                if
+                    S =< T ->
+                        redis_parser:reply_multi(
+                            [redis_parser:reply_single(K) || K <- lists:sublist(List, S, T-S+1)]
+                        );
                     true ->
-                        _Index + 1
-                end,
-            _Index2 = binary_to_integer(End),
-            T = if
-                    _Index2 < 0 andalso _Index2 + M >= 0 ->
-                        M + _Index2 + 1;
-                    true ->
-                        _Index2 + 1
-                end,
-            if
-                S =< T andalso T =< M ->
-                    redis_parser:reply_multi(
-                        [redis_parser:reply_single(K) ||
-                            K <- lists:sublist(List, S, T-S+1)]
-                    );
-                true ->
-                    redis_parser:reply_single(<<>>)
-            end;
-        _ ->
-            redis_parser:reply_single(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+                        redis_parser:reply_single(<<>>)
+                end;
+            _ ->
+                redis_parser:reply_single(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
     catch
         _:_ ->
             redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
