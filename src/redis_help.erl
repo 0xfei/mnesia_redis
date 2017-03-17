@@ -1,7 +1,11 @@
 -module(redis_help).
 
 %% API
--export([lower_binary/1, find_number/2, join_list/2, calc_index/2]).
+-export([
+    lower_binary/1, find_number/2,
+    join_list/2, calc_index/2,
+    add_elements/3, remove_elements/3]
+).
 
 -define(LIMIT_MAX, 999999).
 
@@ -50,4 +54,30 @@ calc_index(Offset, M) ->
             I + 1;
         true ->
             throw("Too long")
+    end.
+
+%% insert sets
+-spec add_elements(E::list(), Set::sets:set(), N::integer()) ->
+    NSet::sets:set().
+add_elements([], Set, N) ->
+    {N, Set};
+add_elements([H|T], Set, N) ->
+    case sets:is_element(H, Set) of
+        true ->
+            add_elements(T, Set, N);
+        _ ->
+            add_elements(T, sets:add_element(H, Set), N+1)
+    end.
+
+%% remove sets
+-spec remove_elements(E::list(), Set::sets:set(), N::integer()) ->
+    NSet::sets:set().
+remove_elements([], Set, N) ->
+    {N, Set};
+remove_elements([H|T], Set, N) ->
+    case sets:is_element(H, Set) of
+        true ->
+            remove_elements(T, sets:del_element(H, Set), N+1);
+        _ ->
+            remove_elements(T, Set, N)
     end.

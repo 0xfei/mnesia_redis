@@ -10,7 +10,7 @@
 -export([del/3]).
 -export([get/3, set/3]).
 -export([rpush/3, lpop/3, lindex/3, lrange/3]).
-
+-export([sadd/3, sismember/3, smembers/3, srem/3]).
 
 %% socket state
 -record(state, {
@@ -118,13 +118,15 @@ del(Database, N, [Key|Left]) ->
 
 %% get
 get(Database, 1, [Key]) ->
-    try mnesia:dirty_read({Database, Key}) of
-        [{Database, Key, Value}] when is_binary(Value)->
-            redis_parser:reply_single(Value);
-        [] ->
-            redis_parser:reply_single(<<>>);
-        _ ->
-            redis_parser:reply_error(<<"ERR Operation against a key holding the wrong kind of value">>)
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, Value}] when is_binary(Value)->
+                redis_parser:reply_single(Value);
+            [] ->
+                redis_parser:reply_single(<<>>);
+            _ ->
+                redis_parser:reply_error(<<"ERR Operation against a key holding the wrong kind of value">>)
+        end
     catch
         _:_ ->
             redis_parser:reply_error(<<"ERR wrong number of arguments for 'get' command">>)
@@ -135,11 +137,13 @@ get(_, _, _) ->
 %% set
 %% todo: expire
 set(Database, 2, [Key, Value]) ->
-    try mnesia:dirty_write({Database, Key, Value}) of
-        ok ->
-            redis_parser:reply_status(<<"OK">>);
-        _ ->
-            redis_parser:reply_error(<<"ERR syntax error">>)
+    try
+        case mnesia:dirty_write({Database, Key, Value}) of
+            ok ->
+                redis_parser:reply_status(<<"OK">>);
+            _ ->
+                redis_parser:reply_error(<<"ERR syntax error">>)
+        end
     catch
         _:_ ->
             redis_parser:reply_error(<<"ERR syntax error">>)
@@ -153,15 +157,17 @@ set(_, _, _) ->
 
 %% rpush
 rpush(Database, N, [Key | Left]) when N > 1 ->
-    try mnesia:dirty_read({Database, Key}) of
-        [{Database, Key, [M|Value]}] when is_integer(M) ->
-            mnesia:dirty_write({Database, Key, [N-1+M|redis_help:join_list(Value,Left)]}),
-            redis_parser:reply_integer(N-1+M);
-        [] ->
-            mnesia:dirty_write({Database, Key, [N-1|Left]}),
-            redis_parser:reply_integer(N-1);
-        _ ->
-            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, [M|Value]}] when is_integer(M) ->
+                mnesia:dirty_write({Database, Key, [N-1+M|redis_help:join_list(Value,Left)]}),
+                redis_parser:reply_integer(N-1+M);
+            [] ->
+                mnesia:dirty_write({Database, Key, [N-1|Left]}),
+                redis_parser:reply_integer(N-1);
+            _ ->
+                redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
     catch
         _:_ ->
             redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
@@ -172,15 +178,17 @@ rpush(_, _, _) ->
 %% lpop
 %% todo: maybe more check
 lpop(Database, 1, [Key]) ->
-    try mnesia:dirty_read({Database, Key}) of
-        [{Database, Key, [1 , H]}] ->
-            mnesia:dirty_delete({Database, Key}),
-            redis_parser:reply_single(H);
-        [{Database, Key, [M, H | Value]}] when is_integer(M)->
-            mnesia:dirty_write({Database, Key, [M-1 | Value]}),
-            redis_parser:reply_single(H);
-        _ ->
-            redis_parser:reply_single(<<>>)
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, [1 , H]}] ->
+                mnesia:dirty_delete({Database, Key}),
+                redis_parser:reply_single(H);
+            [{Database, Key, [M, H | Value]}] when is_integer(M)->
+                mnesia:dirty_write({Database, Key, [M-1 | Value]}),
+                redis_parser:reply_single(H);
+            _ ->
+                redis_parser:reply_single(<<>>)
+        end
     catch
         _:_ ->
             redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
@@ -229,3 +237,93 @@ lrange(Database, 3, [Key, Start, End]) ->
     end;
 lrange(_, _, _) ->
     redis_parser:reply_error(<<"ERR wrong number of arguments for 'lrange' command">>).
+
+
+%%
+%% set
+%%
+
+%% sadd
+sadd(Database, N, [Key|Value]) when N > 1->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, Set}] ->
+                {Number, NewSet} = redis_help:add_elements(Value, Set, 0),
+                mnesia:dirty_write({Database, Key, NewSet}),
+                redis_parser:reply_integer(Number);
+            [] ->
+                {Number, NewSet} = redis_help:add_elements(Value, sets:new(), 0),
+                mnesia:dirty_write({Database, Key, NewSet}),
+                redis_parser:reply_integer(Number);
+            _ ->
+                redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+sadd(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'sadd' command">>).
+
+%% SISMEMBER
+sismember(Database, 2, [Key, Value]) ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, Set}] ->
+                case sets:is_element(Value, Set) of
+                    true ->
+                        redis_parser:reply_integer(1);
+                    _ ->
+                        redis_parser:reply_integer(0)
+                end;
+            [] ->
+                redis_parser:reply_integer(0);
+            _ ->
+                redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+sismember(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'sismember' command">>).
+
+%% smembers
+smembers(Database, 1, [Key]) ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, Set}] ->
+                redis_parser:reply_multi(
+                    [redis_parser:reply_single(K) || K <- sets:to_list(Set)]
+                );
+            [] ->
+                redis_parser:reply_multi([], 0, <<>>);
+            _ ->
+                redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+smembers(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'smembers' command">>).
+
+%% srem
+srem(Database, N, [Key|Value]) when N > 1->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, Set}] ->
+                {Number, NewSet} = redis_help:remove_elements(Value, Set, 0),
+                mnesia:dirty_write({Database, Key, NewSet}),
+                redis_parser:reply_integer(Number);
+            [] ->
+                redis_parser:reply_integer(0);
+            _ ->
+                redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+srem(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'srem' command">>).
