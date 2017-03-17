@@ -1,3 +1,8 @@
+%%
+%% todo: 
+%%	replace List++ListB by join two list with a fun
+%%	move help function to another file
+%%
 -module(redis_operation).
 
 -include("redis_operation.hrl").
