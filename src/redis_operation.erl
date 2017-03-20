@@ -12,6 +12,7 @@
 -export([rpush/3, lpop/3, lindex/3, lrange/3]).
 -export([sadd/3, sismember/3, smembers/3, srem/3]).
 -export([hget/3, hset/3, hexists/3, hgetall/3, hdel/3]).
+-export([zadd/3, zrem/3, zrange/3, zrangebyscore/3]).
 
 %% socket state
 -record(state, {
@@ -448,3 +449,140 @@ hdel(Database, N, [Key|Value]) when N > 1->
     end;
 hdel(_, _, _) ->
     redis_parser:reply_error(<<"ERR wrong number of arguments for 'hdel' command">>).
+
+%%
+%% orderdset
+%%
+
+%% zadd
+zadd(Database, N, [Key | Value]) when N rem 2 == 1 ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, {Set, Dict}}] ->
+                {Number, NewSet, NewDict} = redis_help:add_orddict(Value, Set, Dict, 0),
+                mnesia:dirty_write({Database, Key, {NewSet, NewDict}}),
+                redis_parser:reply_integer(Number);
+            [] ->
+                {Number, NewSet, NewDict} = redis_help:add_orddict(Value, ordsets:new(), dict:new(), 0),
+                mnesia:dirty_write({Database, Key, {NewSet, NewDict}}),
+                redis_parser:reply_integer(Number);
+            _ ->
+                redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+zadd(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'zadd' command">>).
+
+%% zrem
+zrem(Database, N, [Key | Value]) when N > 1 ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, {Set, Dict}}] ->
+                {Number, NewSet, NewDict} = redis_help:del_orddict(Value, Set, Dict, 0),
+                mnesia:dirty_write({Database, Key, {NewSet, NewDict}}),
+                redis_parser:reply_integer(Number);
+            [] ->
+                redis_parser:reply_integer(0);
+            _ ->
+                redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+zrem(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'zrem' command">>).
+
+%% zrange
+zrange(Database, 3, [Key, Start, End]) ->
+    zrange_int(Database, Key, Start, End, 0);
+zrange(Database, 4, [Key, Start, End, WithScore]) ->
+    case redis_help:lower_binary(WithScore) of
+        <<"withscores">> ->
+            zrange_int(Database, Key, Start, End, 1);
+        _ ->
+            redis_parser:reply_error(<<"ERR wrong number of arguments for 'zrange' command">>)
+    end;
+zrange(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'zrange' command">>).
+
+zrange_int(Database, Key, Start, End, Withscore) ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, {Set, _Dict}}] ->
+                M = ordsets:size(Set),
+                S = redis_help:calc_index(Start, M),
+                T = redis_help:calc_index(End, M),
+                if
+                    S > T ->
+                        redis_parser:reply_single(<<>>);
+                    Withscore == 1 ->
+                        redis_parser:reply_multi(
+                            lists:flatten(
+                                [[redis_parser:reply_single(DictKey), redis_parser:reply_single(Score)] ||
+                                    {Score, DictKey} <- lists:sublist(ordsets:to_list(Set), S, T-S+1)]
+                            ));
+                    true ->
+                        redis_parser:reply_multi(
+                            [redis_parser:reply_single(DictKey) ||
+                                {_Score, DictKey} <- lists:sublist(ordsets:to_list(Set), S, T-S+1)]
+                        )
+                end;
+            _ ->
+                redis_parser:reply_single(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end.
+
+%% zrangebyscore
+zrangebyscore(Database, 3, [Key, Start, End]) ->
+    zrangebyscore_int(Database, Key, Start, End, 0);
+zrangebyscore(Database, 4, [Key, Start, End, WithScore]) ->
+    case redis_help:lower_binary(WithScore) of
+        <<"withscores">> ->
+            zrangebyscore_int(Database, Key, Start, End, 1);
+        _ ->
+            redis_parser:reply_error(<<"ERR wrong number of arguments for 'zrangebyscore' command">>)
+    end;
+zrangebyscore(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'zrangebyscore' command">>).
+
+zrangebyscore_int(Database, Key, Start, End, Withscore) ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, {Set, _Dict}}] ->
+                M = ordsets:size(Set),
+                List = ordsets:to_list(Set),
+                S = redis_help:list_find_low(List, redis_help:binary_to_number(Start), 1, M),
+                T = redis_help:list_find_high(List, redis_help:binary_to_number(End), 1, M),
+                if
+                    S > T ->
+                        redis_parser:reply_single(<<>>);
+                    S > M ->
+                        redis_parser:reply_single(<<>>);
+                    T == 0 ->
+                        redis_parser:reply_single(<<>>);
+                    Withscore == 1 ->
+                        redis_parser:reply_multi(
+                            lists:flatten(
+                                [[redis_parser:reply_single(DictKey), redis_parser:reply_single(Score)] ||
+                                    {Score, DictKey} <- lists:sublist(List, S, T-S+1)]
+                            ));
+                    true ->
+                        redis_parser:reply_multi(
+                            [redis_parser:reply_single(DictKey) ||
+                                {_Score, DictKey} <- lists:sublist(List, S, T-S+1)]
+                        )
+                end;
+            _ ->
+                redis_parser:reply_single(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end.

@@ -2,10 +2,12 @@
 
 %% API
 -export([
-    lower_binary/1, find_number/2,
+    lower_binary/1, find_number/2, binary_to_number/1,
     join_list/2, calc_index/2,
     add_elements/3, remove_elements/3,
-    remove_hash/3]
+    remove_hash/3,
+    add_orddict/4, del_orddict/4,
+    list_find_low/4, list_find_high/4]
 ).
 
 -define(LIMIT_MAX, 999999).
@@ -27,7 +29,7 @@ lower_binary(<<H:8, Left/binary>>, Binary) ->
 %% find_number <<"123dfasdfasd">> -> {123, Binary}
 -spec find_number(Data::binary(), Initialize::integer()) ->
     {Number::integer(), Bin::binary()}.
-find_number(<<Num/integer, Data/binary>>, Now) when Num > $0 andalso Num =< $9 ->
+find_number(<<Num/integer, Data/binary>>, Now) when Num >= $0 andalso Num =< $9 ->
     find_number(Data, Now*10+Num-$0);
 find_number(<<$\r, $\n, Data/binary>>, Now) ->
     {Now, Data}.
@@ -55,6 +57,39 @@ calc_index(Offset, M) ->
             I + 1;
         true ->
             throw("Too long")
+    end.
+
+%% list_find_low
+list_find_low(_List, _Value, S, E) when S > E ->
+    S;
+list_find_low(List, Value, S, E) ->
+    Mid = (S + E + 1) div 2,
+    {Bin, _Key} = lists:nth(Mid, List),
+    Score = binary_to_number(Bin),
+    if
+        Score >= Value -> list_find_low(List, Value, S, Mid-1);
+        true -> list_find_low(List, Value, Mid+1, E)
+    end.
+
+%% list_find_high
+list_find_high(_List, _Value, S, E) when S > E ->
+    E;
+list_find_high(List, Value, S, E) ->
+    Mid = (S + E + 1) div 2,
+    {Bin, _Key} = lists:nth(Mid, List),
+    Score = binary_to_number(Bin),
+    if
+        Score =< Value -> list_find_high(List, Value, Mid+1, E);
+        true -> list_find_high(List, Value, S, Mid-1)
+    end.
+
+%% binary_to_number
+-spec binary_to_number(B::binary()) -> integer() | float() .
+binary_to_number(B) ->
+    try
+        binary_to_integer(B)
+    catch _:_ ->
+        binary_to_float(B)
     end.
 
 %% insert sets
@@ -94,4 +129,48 @@ remove_hash([H|T], Map, N) ->
             remove_hash(T, maps:remove(H, Map), N+1);
         _ ->
             remove_hash(T, Map, N)
+    end.
+
+%% add orddict
+-spec add_orddict(E::list(), Set::ordsets:set(), Dict::dict:dict(), N::integer()) ->
+    {C::integer(), NewSet::ordsets:set(), NewDict::dict:dict()}.
+add_orddict([], Set, Dict, N) ->
+    {N, Set, Dict};
+add_orddict([Score, Key|Left], Set, Dict, N) ->
+    _ = binary_to_number(Score),
+    case dict:find(Key, Dict) of
+        {ok, Value} ->
+            add_orddict(
+                Left,
+                ordsets:add_element({Score, Key},
+                    ordsets:del_element({Value, Key}, Set)),
+                dict:store(Key, Score, Dict),
+                N);
+        _ ->
+            add_orddict(
+                Left,
+                ordsets:add_element({Score, Key}, Set),
+                dict:store(Key, Score, Dict),
+                N+1)
+    end.
+
+%% del orddict
+-spec del_orddict(E::list(), Set::ordsets:set(), Dict::dict:dict(), N::integer()) ->
+    {C::integer(), NewSet::ordsets:set(), NewDict::dict:dict()}.
+del_orddict([], Set, Dict, N) ->
+    {N, Set, Dict};
+del_orddict([Key|Left], Set, Dict, N) ->
+    case dict:find(Key, Dict) of
+        {ok, Value} ->
+            del_orddict(
+                Left,
+                ordsets:del_element({Value, Key}, Set),
+                dict:erase(Key, Dict),
+                N+1);
+        _ ->
+            del_orddict(
+                Left,
+                Set,
+                Dict,
+                N)
     end.

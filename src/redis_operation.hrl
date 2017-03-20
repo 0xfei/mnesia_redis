@@ -18,5 +18,9 @@
 -define(HEXISTS, hexists).
 -define(HGETALL, hgetall).
 -define(HDELM, hdel).
+-define(ZADD, zadd).
+-define(ZREM, zrem).
+-define(ZRANGE, zrange).
+-define(ZRANGEBYSCORE, zrangebyscore).
 
 -endif.
