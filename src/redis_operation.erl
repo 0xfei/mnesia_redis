@@ -108,11 +108,19 @@ do_transaction(Cmd, Num, Param, State=#state{trans=_, wlist=_Wlist, optlist=OptL
 %%
 
 %% del
-del(_Database, 0, []) ->
-    redis_parser:reply_status(<<"OK">>);
-del(Database, N, [Key|Left]) ->
-    mnesia:dirty_delete({Database, Key}),
-    del(Database, N-1, Left).
+del(Database, N, Keys) ->
+    del_int(Database, N, Keys, 0).
+
+del_int(_Database, 0, [], N) ->
+    redis_parser:reply_integer(N);
+del_int(Database, N, [Key|Left], Num) ->
+    case mnesia:dirty_read({Database, Key}) of
+        [{Database, Key, _Value}] ->
+            mnesia:dirty_delete({Database, Key}),
+            del_int(Database, N-1, Left, Num+1);
+        _ ->
+            del_int(Database, N-1, Left, Num)
+    end.
 
 %%
 %% string
