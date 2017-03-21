@@ -5,6 +5,8 @@
 -define(GET, get).
 -define(SET, set).
 -define(DEL, del).
+-define(INCR, incr).
+-define(INCRBY, incrby).
 -define(RPUSH, rpush).
 -define(LPOP, lpop).
 -define(LINDEX, lindex).

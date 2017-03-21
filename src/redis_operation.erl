@@ -8,7 +8,7 @@
 %% API
 -export([enter_loop/3]).
 -export([del/3]).
--export([get/3, set/3]).
+-export([get/3, set/3, incr/3, incrby/3]).
 -export([rpush/3, lpop/3, lindex/3, lrange/3]).
 -export([sadd/3, sismember/3, smembers/3, srem/3]).
 -export([hget/3, hset/3, hincrby/3, hexists/3, hgetall/3, hdel/3]).
@@ -160,6 +160,47 @@ set(Database, 2, [Key, Value]) ->
     end;
 set(_, _, _) ->
     redis_parser:reply_error(<<"ERR syntax error">>).
+
+%% incr
+incr(Database, 1, [Key]) ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, Value}] ->
+                NewValue = redis_help:number_to_binary(
+                    redis_help:binary_to_number(Value) + 1
+                ),
+                mnesia:dirty_write({Database, Key, NewValue}),
+                redis_parser:reply_single(NewValue);
+            _ ->
+                redis_parser:reply_error(<<"ERR Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"ERR wrong number of arguments for 'incr' command">>)
+    end;
+incr(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'incr' command">>).
+
+%% incrby
+incrby(Database, 2, [Key, Incr]) ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, Value}] ->
+                NewValue = redis_help:number_to_binary(
+                    redis_help:binary_to_number(Value) +
+                    redis_help:binary_to_number(Incr)
+                ),
+                mnesia:dirty_write({Database, Key, NewValue}),
+                redis_parser:reply_single(NewValue);
+            _ ->
+                redis_parser:reply_error(<<"ERR Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"ERR wrong number of arguments for 'incr' command">>)
+    end;
+incrby(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'incr' command">>).
 
 %%
 %% list
