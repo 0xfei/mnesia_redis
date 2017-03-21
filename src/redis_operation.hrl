@@ -15,6 +15,7 @@
 -define(SREM, srem).
 -define(HGET, hget).
 -define(HSET, hset).
+-define(HINCRBY, hincrby).
 -define(HEXISTS, hexists).
 -define(HGETALL, hgetall).
 -define(HDELM, hdel).

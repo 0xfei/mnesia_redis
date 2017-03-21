@@ -11,7 +11,7 @@
 -export([get/3, set/3]).
 -export([rpush/3, lpop/3, lindex/3, lrange/3]).
 -export([sadd/3, sismember/3, smembers/3, srem/3]).
--export([hget/3, hset/3, hexists/3, hgetall/3, hdel/3]).
+-export([hget/3, hset/3, hincrby/3, hexists/3, hgetall/3, hdel/3]).
 -export([zadd/3, zrem/3, zrange/3, zrangebyscore/3, zincrby/3, zscore/3]).
 
 %% socket state
@@ -393,6 +393,34 @@ hget(Database, 2, [Key, K]) ->
 hget(_, _, _) ->
     redis_parser:reply_error(<<"ERR wrong number of arguments for 'hget' command">>).
 
+%% hincrby
+hincrby(Database, 3, [Key, K, Incr]) ->
+    try
+        Increment = binary_to_integer(Incr),
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, Map}] ->
+                NewValue = case maps:is_key(K, Map) of
+                               true ->
+                                   integer_to_binary(
+                                       binary_to_integer(maps:get(K, Map)) + Increment
+                                   );
+                               _ ->
+                                   Incr
+                           end,
+                mnesia:dirty_write({Database, Key, maps:put(K, NewValue, Map)}),
+                redis_parser:reply_single(NewValue);
+            [] ->
+                mnesia:dirty_write({Database, Key, maps:put(K, Incr, maps:new())}),
+                redis_parser:reply_single(Incr);
+            _ ->
+                redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+hincrby(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'hincrby' command">>).
 
 %% hexists
 hexists(Database, 2, [Key, K]) ->
