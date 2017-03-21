@@ -11,7 +11,7 @@
 -export([get/3, set/3, incr/3, incrby/3]).
 -export([rpush/3, lpop/3, lindex/3, lrange/3]).
 -export([sadd/3, sismember/3, smembers/3, srem/3]).
--export([hget/3, hset/3, hincrby/3, hexists/3, hgetall/3, hdel/3]).
+-export([hget/3, hset/3, hincrby/3, hexists/3, hgetall/3, hdel/3, hmget/3, hmset/3]).
 -export([zadd/3, zrem/3, zrange/3, zrangebyscore/3, zincrby/3, zscore/3]).
 
 %% socket state
@@ -410,6 +410,26 @@ hset(Database, 3, [Key, K, V]) ->
 hset(_, _, _) ->
     redis_parser:reply_error(<<"ERR wrong number of arguments for 'hset' command">>).
 
+%% hmset
+hmset(Database, N, [Key, K | KV]) when N rem 2 == 1 ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, Map}] ->
+                mnesia:dirty_write({Database, Key, redis_help:add_hash([K | KV], Map)}),
+                redis_parser:reply_status(<<"OK">>);
+            [] ->
+                mnesia:dirty_write({Database, Key, redis_help:add_hash([K | KV], maps:new())}),
+                redis_parser:reply_status(<<"OK">>);
+            _ ->
+                redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+hmset(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'hmset' command">>).
+
 %% hget
 hget(Database, 2, [Key, K]) ->
     try
@@ -433,6 +453,37 @@ hget(Database, 2, [Key, K]) ->
     end;
 hget(_, _, _) ->
     redis_parser:reply_error(<<"ERR wrong number of arguments for 'hget' command">>).
+
+%% hmget
+hmget(Database, N, [Key | Ks]) when N > 1 ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, Map}] ->
+                redis_parser:reply_multi(
+                    lists:map(
+                        fun (K) ->
+                            redis_parser:reply_single(
+                                case maps:is_key(K, Map) of
+                                    true ->
+                                        maps:get(K, Map);
+                                    _ ->
+                                        <<>>
+                                end)
+                        end,
+                        Ks)
+                );
+            [] ->
+                redis_parser:reply_single(<<>>);
+            _ ->
+                redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+hmget(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'hmget' command">>).
+
 
 %% hincrby
 hincrby(Database, 3, [Key, K, Incr]) ->

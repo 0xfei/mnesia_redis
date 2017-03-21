@@ -6,7 +6,7 @@
     binary_to_number/1, number_to_binary/1,
     join_list/2, calc_index/2,
     add_elements/3, remove_elements/3,
-    remove_hash/3,
+    add_hash/2, remove_hash/3,
     add_orddict/4, del_orddict/4,
     list_find_low/4, list_find_high/4]
 ).
@@ -125,6 +125,13 @@ remove_elements([H|T], Set, N) ->
         _ ->
             remove_elements(T, Set, N)
     end.
+
+%% add multi hash
+-spec add_hash(E::list(), Map::#{}) -> NMap::#{}.
+add_hash([], Map) ->
+    Map;
+add_hash([K, V|Left], Map) ->
+    add_hash(Left, maps:put(K, V, Map)).
 
 %% remove hash
 -spec remove_hash(E::list(), Set::#{}, N::integer()) ->
