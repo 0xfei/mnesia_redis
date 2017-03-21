@@ -7,7 +7,7 @@
 
 %% API
 -export([enter_loop/3]).
--export([del/3]).
+-export([del/3, exists/3]).
 -export([get/3, set/3, incr/3, incrby/3]).
 -export([rpush/3, lpop/3, lindex/3, lrange/3]).
 -export([sadd/3, sismember/3, smembers/3, srem/3]).
@@ -106,6 +106,22 @@ do_transaction(Cmd, Num, Param, State=#state{trans=_, wlist=_Wlist, optlist=OptL
 %%
 %% key
 %%
+
+%% exists
+exists(Database, 1, [Key]) ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, _Value}] ->
+                redis_parser:reply_integer(1);
+            _ ->
+                redis_parser:reply_integer(0)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"ERR wrong number of arguments for 'get' command">>)
+    end;
+exists(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'get' command">>).
 
 %% del
 del(Database, N, Keys) ->

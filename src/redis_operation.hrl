@@ -2,6 +2,7 @@
 -define(REDIS_OPERATION_HRL, 1).
 
 %% operation
+-define(EXISTS, exists).
 -define(GET, get).
 -define(SET, set).
 -define(DEL, del).
@@ -28,6 +29,8 @@
 -define(ZSCORE, zscore).
 -define(ZINCRBY, zincrby).
 -define(ZRANGE, zrange).
+-define(ZREVRANGE, zrevrange).
 -define(ZRANGEBYSCORE, zrangebyscore).
+-define(ZREVRANGEBYSCORE, zrevrangebyscore).
 
 -endif.
