@@ -12,7 +12,7 @@
 -export([rpush/3, lpop/3, lindex/3, lrange/3]).
 -export([sadd/3, sismember/3, smembers/3, srem/3]).
 -export([hget/3, hset/3, hincrby/3, hexists/3, hgetall/3, hdel/3, hmget/3, hmset/3]).
--export([zadd/3, zrem/3, zrange/3, zrangebyscore/3, zincrby/3, zscore/3]).
+-export([zadd/3, zrem/3, zrange/3, zrevrange/3, zrangebyscore/3, zrevrangebyscore/3, zincrby/3, zscore/3]).
 
 %% socket state
 -record(state, {
@@ -689,18 +689,31 @@ zincrby(_, _, _) ->
 
 %% zrange
 zrange(Database, 3, [Key, Start, End]) ->
-    zrange_int(Database, Key, Start, End, 0);
+    zrange_int(Database, Key, Start, End, 0, fun(X) -> X end);
 zrange(Database, 4, [Key, Start, End, WithScore]) ->
     case redis_help:lower_binary(WithScore) of
         <<"withscores">> ->
-            zrange_int(Database, Key, Start, End, 1);
+            zrange_int(Database, Key, Start, End, 1, fun(X) -> X end);
         _ ->
             redis_parser:reply_error(<<"ERR wrong number of arguments for 'zrange' command">>)
     end;
 zrange(_, _, _) ->
     redis_parser:reply_error(<<"ERR wrong number of arguments for 'zrange' command">>).
 
-zrange_int(Database, Key, Start, End, Withscore) ->
+%% zrevrange
+zrevrange(Database, 3, [Key, Start, End]) ->
+    zrange_int(Database, Key, Start, End, 0, fun(X) -> lists:reverse(X) end);
+zrevrange(Database, 4, [Key, Start, End, WithScore]) ->
+    case redis_help:lower_binary(WithScore) of
+        <<"withscores">> ->
+            zrange_int(Database, Key, Start, End, 1, fun(X) -> lists:reverse(X) end);
+        _ ->
+            redis_parser:reply_error(<<"ERR wrong number of arguments for 'zrevrange' command">>)
+    end;
+zrevrange(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'zrevrange' command">>).
+
+zrange_int(Database, Key, Start, End, Withscore, Fun) ->
     try
         case mnesia:dirty_read({Database, Key}) of
             [{Database, Key, {Set, _Dict}}] ->
@@ -713,13 +726,13 @@ zrange_int(Database, Key, Start, End, Withscore) ->
                     Withscore == 1 ->
                         redis_parser:reply_multi(
                             lists:flatten(
-                                [[redis_parser:reply_single(DictKey), redis_parser:reply_single(Score)] ||
-                                    {_, Score, DictKey} <- lists:sublist(ordsets:to_list(Set), S, T-S+1)]
-                            ));
+                                Fun([[redis_parser:reply_single(DictKey), redis_parser:reply_single(Score)] ||
+                                    {_, Score, DictKey} <- lists:sublist(ordsets:to_list(Set), S, T-S+1)]))
+                        );
                     true ->
                         redis_parser:reply_multi(
-                            [redis_parser:reply_single(DictKey) ||
-                                {_, _Score, DictKey} <- lists:sublist(ordsets:to_list(Set), S, T-S+1)]
+                            Fun([redis_parser:reply_single(DictKey) ||
+                                {_, _Score, DictKey} <- lists:sublist(ordsets:to_list(Set), S, T-S+1)])
                         )
                 end;
             _ ->
@@ -732,18 +745,31 @@ zrange_int(Database, Key, Start, End, Withscore) ->
 
 %% zrangebyscore
 zrangebyscore(Database, 3, [Key, Start, End]) ->
-    zrangebyscore_int(Database, Key, Start, End, 0);
+    zrangebyscore_int(Database, Key, Start, End, 0, fun(X) -> X end);
 zrangebyscore(Database, 4, [Key, Start, End, WithScore]) ->
     case redis_help:lower_binary(WithScore) of
         <<"withscores">> ->
-            zrangebyscore_int(Database, Key, Start, End, 1);
+            zrangebyscore_int(Database, Key, Start, End, 1, fun(X) -> X end);
         _ ->
             redis_parser:reply_error(<<"ERR wrong number of arguments for 'zrangebyscore' command">>)
     end;
 zrangebyscore(_, _, _) ->
     redis_parser:reply_error(<<"ERR wrong number of arguments for 'zrangebyscore' command">>).
 
-zrangebyscore_int(Database, Key, Start, End, Withscore) ->
+%% zrevrangebyscore
+zrevrangebyscore(Database, 3, [Key, Start, End]) ->
+    zrangebyscore_int(Database, Key, Start, End, 0, fun(X) -> lists:reverse(X) end);
+zrevrangebyscore(Database, 4, [Key, Start, End, WithScore]) ->
+    case redis_help:lower_binary(WithScore) of
+        <<"withscores">> ->
+            zrangebyscore_int(Database, Key, Start, End, 1, fun(X) -> lists:reverse(X) end);
+        _ ->
+            redis_parser:reply_error(<<"ERR wrong number of arguments for 'zrevrangebyscore' command">>)
+    end;
+zrevrangebyscore(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'zrevrangebyscore' command">>).
+
+zrangebyscore_int(Database, Key, Start, End, Withscore, Fun) ->
     try
         case mnesia:dirty_read({Database, Key}) of
             [{Database, Key, {Set, _Dict}}] ->
@@ -761,13 +787,13 @@ zrangebyscore_int(Database, Key, Start, End, Withscore) ->
                     Withscore == 1 ->
                         redis_parser:reply_multi(
                             lists:flatten(
-                                [[redis_parser:reply_single(DictKey), redis_parser:reply_single(Score)] ||
-                                    {_, Score, DictKey} <- lists:sublist(List, S, T-S+1)]
-                            ));
+                                Fun([[redis_parser:reply_single(DictKey), redis_parser:reply_single(Score)] ||
+                                    {_, Score, DictKey} <- lists:sublist(List, S, T-S+1)]))
+                        );
                     true ->
                         redis_parser:reply_multi(
-                            [redis_parser:reply_single(DictKey) ||
-                                {_, _Score, DictKey} <- lists:sublist(List, S, T-S+1)]
+                            Fun([redis_parser:reply_single(DictKey) ||
+                                {_, _Score, DictKey} <- lists:sublist(List, S, T-S+1)])
                         )
                 end;
             _ ->
