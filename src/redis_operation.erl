@@ -7,7 +7,7 @@
 
 %% API
 -export([enter_loop/3]).
--export([del/3, exists/3]).
+-export([del/3, exists/3, keys/3]).
 -export([get/3, set/3, incr/3, incrby/3]).
 -export([rpush/3, lpop/3, lindex/3, lrange/3]).
 -export([sadd/3, sismember/3, smembers/3, srem/3]).
@@ -118,10 +118,24 @@ exists(Database, 1, [Key]) ->
         end
     catch
         _:_ ->
-            redis_parser:reply_error(<<"ERR wrong number of arguments for 'get' command">>)
+            redis_parser:reply_error(<<"ERR wrong number of arguments for 'exists' command">>)
     end;
 exists(_, _, _) ->
-    redis_parser:reply_error(<<"ERR wrong number of arguments for 'get' command">>).
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'exists' command">>).
+
+%% keys
+keys(Database, 1, [Pattern]) ->
+    try
+        redis_parser:reply_multi(
+            [redis_parser:reply_single(K) ||
+                K <- mnesia:dirty_all_keys(Database), redis_help:pattern_match(K, Pattern)]
+        )
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"ERR wrong number of arguments for 'keys' command">>)
+    end;
+keys(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'keys' command">>).
 
 %% del
 del(Database, N, Keys) ->

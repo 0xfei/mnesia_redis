@@ -2,7 +2,7 @@
 
 %% API
 -export([
-    lower_binary/1, find_number/2,
+    lower_binary/1, find_number/2, pattern_match/2,
     binary_to_number/1, number_to_binary/1,
     join_list/2, calc_index/2,
     add_elements/3, remove_elements/3,
@@ -35,6 +35,37 @@ find_number(<<Num/integer, Data/binary>>, Now) when Num >= $0 andalso Num =< $9 
 find_number(<<$\r, $\n, Data/binary>>, Now) ->
     {Now, Data}.
 
+%% pattern_match , only 1 * now
+-spec pattern_match(M::binary(), P::binary()) -> true | false.
+pattern_match(M, P) ->
+    int_match(M, P).
+
+int_match(<<>>, <<>>) ->
+    true;
+int_match(_L1, <<$*>>) ->
+    true;
+int_match(L1, L2 = <<$*, _L2/binary>>) ->
+    list_match(
+        lists:reverse(binary_to_list(L1)),
+        lists:reverse(binary_to_list(L2))
+    );
+int_match(<<_H:8, L1/binary>>, <<H:8, L2/binary>>) when H == $? ->
+    int_match(L1, L2);
+int_match(<<H:8, L1/binary>>, <<H:8, L2/binary>>) ->
+    int_match(L1, L2);
+int_match(_L1, _L2) ->
+    false.
+
+list_match([], []) ->
+    true;
+list_match([H|T], [H|T2]) ->
+    list_match(T, T2);
+list_match([_H|T], [H|T2]) when H == $? ->
+    list_match(T, T2);
+list_match(_L1, [H|_L2]) when H == $* ->
+    true;
+list_match(_, _) ->
+    false.
 
 %% join_list
 -spec join_list(L1::list(), L2::list()) -> L3::list().
