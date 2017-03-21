@@ -12,7 +12,7 @@
 -export([rpush/3, lpop/3, lindex/3, lrange/3]).
 -export([sadd/3, sismember/3, smembers/3, srem/3]).
 -export([hget/3, hset/3, hexists/3, hgetall/3, hdel/3]).
--export([zadd/3, zrem/3, zrange/3, zrangebyscore/3]).
+-export([zadd/3, zrem/3, zrange/3, zrangebyscore/3, zincrby/3, zscore/3]).
 
 %% socket state
 -record(state, {
@@ -503,6 +503,68 @@ zrem(Database, N, [Key | Value]) when N > 1 ->
     end;
 zrem(_, _, _) ->
     redis_parser:reply_error(<<"ERR wrong number of arguments for 'zrem' command">>).
+
+%% zscore
+zscore(Database, 2, [Key , DictKey]) ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, {_Set, Dict}}] ->
+                Score = case dict:find(DictKey, Dict) of
+                            {ok, Value} ->
+                                Value;
+                            _ ->
+                                <<>>
+                        end,
+                redis_parser:reply_single(Score);
+            [] ->
+                redis_parser:reply_single(<<>>);
+            _ ->
+                redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+zscore(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'zscore' command">>).
+
+%% zincrby
+zincrby(Database, 3, [Key, Incr, DictKey]) ->
+    try
+        Increment = redis_help:binary_to_number(Incr),
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, {Set, Dict}}] ->
+                Score = case dict:find(DictKey, Dict) of
+                            {ok, Value} ->
+                                NewValue = redis_help:number_to_binary(
+                                    redis_help:binary_to_number(Value) + Increment),
+                                mnesia:dirty_write({
+                                    Database, Key,
+                                    {ordsets:add_element({NewValue, DictKey},
+                                        ordsets:del_element({Value, DictKey}, Set)),
+                                     dict:store(DictKey, NewValue, Dict)}
+                                }),
+                                NewValue;
+                            _ ->
+                                mnesia:dirty_write({
+                                    Database, Key,
+                                    {ordsets:add_element({Incr, DictKey}, Set),
+                                    dict:store(DictKey, Incr, Dict)}
+                                }),
+                                Incr
+                        end,
+                redis_parser:reply_single(Score);
+            [] ->
+                redis_parser:reply_single(<<>>);
+            _ ->
+                redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+        end
+    catch
+        _:_ ->
+            redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
+    end;
+zincrby(_, _, _) ->
+    redis_parser:reply_error(<<"ERR wrong number of arguments for 'zincrby' command">>).
 
 %% zrange
 zrange(Database, 3, [Key, Start, End]) ->

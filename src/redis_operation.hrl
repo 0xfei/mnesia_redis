@@ -20,6 +20,8 @@
 -define(HDELM, hdel).
 -define(ZADD, zadd).
 -define(ZREM, zrem).
+-define(ZSCORE, zscore).
+-define(ZINCRBY, zincrby).
 -define(ZRANGE, zrange).
 -define(ZRANGEBYSCORE, zrangebyscore).
 

@@ -2,7 +2,8 @@
 
 %% API
 -export([
-    lower_binary/1, find_number/2, binary_to_number/1,
+    lower_binary/1, find_number/2,
+    binary_to_number/1, number_to_binary/1,
     join_list/2, calc_index/2,
     add_elements/3, remove_elements/3,
     remove_hash/3,
@@ -90,6 +91,15 @@ binary_to_number(B) ->
         binary_to_integer(B)
     catch _:_ ->
         binary_to_float(B)
+    end.
+
+%% number_to_binary
+-spec number_to_binary(B::integer() | float()) -> binary().
+number_to_binary(B) ->
+    try
+        integer_to_binary(B)
+    catch _:_ ->
+        float_to_binary(B)
     end.
 
 %% insert sets
