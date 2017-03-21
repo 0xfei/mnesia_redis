@@ -536,19 +536,20 @@ zincrby(Database, 3, [Key, Incr, DictKey]) ->
             [{Database, Key, {Set, Dict}}] ->
                 Score = case dict:find(DictKey, Dict) of
                             {ok, Value} ->
-                                NewValue = redis_help:number_to_binary(
-                                    redis_help:binary_to_number(Value) + Increment),
+                                OldScore = redis_help:binary_to_number(Value),
+                                NewScore = OldScore + Increment,
+                                NewValue = redis_help:number_to_binary(NewScore),
                                 mnesia:dirty_write({
                                     Database, Key,
-                                    {ordsets:add_element({NewValue, DictKey},
-                                        ordsets:del_element({Value, DictKey}, Set)),
+                                    {ordsets:add_element({NewScore, NewValue, DictKey},
+                                        ordsets:del_element({OldScore, Value, DictKey}, Set)),
                                      dict:store(DictKey, NewValue, Dict)}
                                 }),
                                 NewValue;
                             _ ->
                                 mnesia:dirty_write({
                                     Database, Key,
-                                    {ordsets:add_element({Incr, DictKey}, Set),
+                                    {ordsets:add_element({Increment, Incr, DictKey}, Set),
                                     dict:store(DictKey, Incr, Dict)}
                                 }),
                                 Incr
@@ -593,12 +594,12 @@ zrange_int(Database, Key, Start, End, Withscore) ->
                         redis_parser:reply_multi(
                             lists:flatten(
                                 [[redis_parser:reply_single(DictKey), redis_parser:reply_single(Score)] ||
-                                    {Score, DictKey} <- lists:sublist(ordsets:to_list(Set), S, T-S+1)]
+                                    {_, Score, DictKey} <- lists:sublist(ordsets:to_list(Set), S, T-S+1)]
                             ));
                     true ->
                         redis_parser:reply_multi(
                             [redis_parser:reply_single(DictKey) ||
-                                {_Score, DictKey} <- lists:sublist(ordsets:to_list(Set), S, T-S+1)]
+                                {_, _Score, DictKey} <- lists:sublist(ordsets:to_list(Set), S, T-S+1)]
                         )
                 end;
             _ ->
@@ -641,12 +642,12 @@ zrangebyscore_int(Database, Key, Start, End, Withscore) ->
                         redis_parser:reply_multi(
                             lists:flatten(
                                 [[redis_parser:reply_single(DictKey), redis_parser:reply_single(Score)] ||
-                                    {Score, DictKey} <- lists:sublist(List, S, T-S+1)]
+                                    {_, Score, DictKey} <- lists:sublist(List, S, T-S+1)]
                             ));
                     true ->
                         redis_parser:reply_multi(
                             [redis_parser:reply_single(DictKey) ||
-                                {_Score, DictKey} <- lists:sublist(List, S, T-S+1)]
+                                {_, _Score, DictKey} <- lists:sublist(List, S, T-S+1)]
                         )
                 end;
             _ ->

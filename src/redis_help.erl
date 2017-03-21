@@ -65,8 +65,7 @@ list_find_low(_List, _Value, S, E) when S > E ->
     S;
 list_find_low(List, Value, S, E) ->
     Mid = (S + E + 1) div 2,
-    {Bin, _Key} = lists:nth(Mid, List),
-    Score = binary_to_number(Bin),
+    {Score, _Bin, _Key} = lists:nth(Mid, List),
     if
         Score >= Value -> list_find_low(List, Value, S, Mid-1);
         true -> list_find_low(List, Value, Mid+1, E)
@@ -77,8 +76,7 @@ list_find_high(_List, _Value, S, E) when S > E ->
     E;
 list_find_high(List, Value, S, E) ->
     Mid = (S + E + 1) div 2,
-    {Bin, _Key} = lists:nth(Mid, List),
-    Score = binary_to_number(Bin),
+    {Score, _Bin, _Key} = lists:nth(Mid, List),
     if
         Score =< Value -> list_find_high(List, Value, Mid+1, E);
         true -> list_find_high(List, Value, S, Mid-1)
@@ -147,19 +145,18 @@ remove_hash([H|T], Map, N) ->
 add_orddict([], Set, Dict, N) ->
     {N, Set, Dict};
 add_orddict([Score, Key|Left], Set, Dict, N) ->
-    _ = binary_to_number(Score),
     case dict:find(Key, Dict) of
         {ok, Value} ->
             add_orddict(
                 Left,
-                ordsets:add_element({Score, Key},
-                    ordsets:del_element({Value, Key}, Set)),
+                ordsets:add_element({binary_to_number(Score), Score, Key},
+                    ordsets:del_element({binary_to_number(Value), Value, Key}, Set)),
                 dict:store(Key, Score, Dict),
                 N);
         _ ->
             add_orddict(
                 Left,
-                ordsets:add_element({Score, Key}, Set),
+                ordsets:add_element({binary_to_number(Score), Score, Key}, Set),
                 dict:store(Key, Score, Dict),
                 N+1)
     end.
@@ -174,7 +171,7 @@ del_orddict([Key|Left], Set, Dict, N) ->
         {ok, Value} ->
             del_orddict(
                 Left,
-                ordsets:del_element({Value, Key}, Set),
+                ordsets:del_element({binary_to_number(Value), Value, Key}, Set),
                 dict:erase(Key, Dict),
                 N+1);
         _ ->
