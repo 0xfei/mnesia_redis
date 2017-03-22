@@ -64,7 +64,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% impelment
 do_insert(Database, Key, Time) ->
-    Fun=fun() ->
+    Fun = fun() ->
             [{Database, ?EXPIRE_KEY, {Set, Dict}}] =
                 mnesia:read({Database, ?EXPIRE_KEY}),
             mnesia:write({Database, ?EXPIRE_KEY,
@@ -81,27 +81,27 @@ do_insert(Database, Key, Time) ->
                             dict:store(Key, Time, Dict)}
                 end
             })
-        end,
+          end,
     mnesia:transaction(Fun).
 
 do_clear(Database, Key) ->
-    Fun=fun() ->
-        [{Database, ?EXPIRE_KEY, {Set, Dict}}] =
-            mnesia:read({Database, ?EXPIRE_KEY}),
-        mnesia:write({Database, ?EXPIRE_KEY,
-            case dict:find(Key, Dict) of
-                {ok, Old} ->
-                    {ordsets:del_element({Old, Key}, Set),
-                        dict:erase(Key, Dict)};
-                _ ->
-                    {Set, Dict}
-            end
-        })
-        end,
+    Fun = fun() ->
+            [{Database, ?EXPIRE_KEY, {Set, Dict}}] =
+                mnesia:read({Database, ?EXPIRE_KEY}),
+                mnesia:write({Database, ?EXPIRE_KEY,
+                    case dict:find(Key, Dict) of
+                        {ok, Old} ->
+                            {ordsets:del_element({Old, Key}, Set),
+                                dict:erase(Key, Dict)};
+                        _ ->
+                            {Set, Dict}
+                    end
+                })
+          end,
     mnesia:transaction(Fun).
 
 do_remove(Database, Key) ->
-    Fun=fun() ->
+    Fun = fun() ->
             [{Database, ?EXPIRE_KEY, {Set, Dict}}] =
                 mnesia:read({Database, ?EXPIRE_KEY}),
             mnesia:delete({Database, Key}),
@@ -114,7 +114,7 @@ do_remove(Database, Key) ->
                         {Set, Dict}
                 end
             })
-        end,
+          end,
     mnesia:transaction(Fun).
 
 regular_remove(Databases) ->
