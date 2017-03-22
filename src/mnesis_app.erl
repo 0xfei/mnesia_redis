@@ -4,7 +4,15 @@
 -export([start/2, stop/1]).
 
 start(_Type, _Args) ->
-	mnesia_create(),
+	Tables = [
+		redis_mnesia_table0,
+		redis_mnesia_table1,
+		redis_mnesia_table2,
+		redis_mnesia_table3,
+		redis_mnesia_table4,
+		redis_mnesia_table5
+	],
+	mnesia_create(Tables),
 	{ok, _} = ranch:start_listener(
 		?MODULE,
 		100,
@@ -13,25 +21,10 @@ start(_Type, _Args) ->
 		redis_interface,
 		[]
 	),
-	mnesis_sup:start_link().
+	mnesis_sup:start_link([Tables, 1000]).
 
 stop(_State) ->
 	ok.
 
-mnesia_create() ->
-	mnesia:create_table(redis_mnesia_table0, []),
-	mnesia:create_table(redis_mnesia_table1, []),
-	mnesia:create_table(redis_mnesia_table2, []),
-	mnesia:create_table(redis_mnesia_table3, []),
-	mnesia:create_table(redis_mnesia_table4, []),
-	mnesia:create_table(redis_mnesia_table5, []),
-	mnesia:create_table(redis_mnesia_table6, []),
-	mnesia:create_table(redis_mnesia_table7, []),
-	mnesia:create_table(redis_mnesia_table8, []),
-	mnesia:create_table(redis_mnesia_table9, []),
-	mnesia:create_table(redis_mnesia_tablea, []),
-	mnesia:create_table(redis_mnesia_tableb, []),
-	mnesia:create_table(redis_mnesia_tablec, []),
-	mnesia:create_table(redis_mnesia_tabled, []),
-	mnesia:create_table(redis_mnesia_tablee, []),
-	mnesia:create_table(redis_mnesia_tablef, []).
+mnesia_create(Tables) ->
+	[mnesia:create_table(T, []) || T <- Tables].

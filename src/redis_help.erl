@@ -8,9 +8,11 @@
     add_elements/3, remove_elements/3,
     add_hash/2, remove_hash/3,
     add_orddict/4, del_orddict/4,
-    list_find_low/4, list_find_high/4]
+    list_find_low/4, list_find_high/4,
+    add_key_expire/3, get_expire_time/2, del_expire_time/2]
 ).
 
+-define(EXPIRE_KEY, expire).
 -define(LIMIT_MAX, 999999).
 
 %% <<"ABC">> -> <<"abc">>
@@ -218,4 +220,56 @@ del_orddict([Key|Left], Set, Dict, N) ->
                 Set,
                 Dict,
                 N)
+    end.
+
+%% expire key manage
+-spec get_expire_time(Db::atom(), Key::binary()) -> integer().
+get_expire_time(Database, Key) ->
+    case mnesia:dirty_read({Database, ?EXPIRE_KEY}) of
+        [{Database, ?EXPIRE_KEY, {_Set, Dict}}] ->
+            case dict:find(Key, Dict) of
+                {ok, ExpTime} ->
+                    Now = erlang:system_time(1),
+                    if
+                        ExpTime =< Now ->
+                            redis_expire:remove(Database, Key),
+                            -2;
+                        true ->
+                            ExpTime - Now
+                    end;
+                _ ->
+                    -1
+            end;
+        _ ->
+            -1
+    end.
+
+-spec add_key_expire(Db::atom(), Key::binary(), Sec::binary()) -> 0 | 1.
+add_key_expire(Database, Key, BinSec) ->
+    Seconds = erlang:system_time(1) + binary_to_integer(BinSec),
+    case mnesia:dirty_read({Database, ?EXPIRE_KEY}) of
+        [{Database, ?EXPIRE_KEY, {_Set, _Dict}}] ->
+            redis_expire:insert(Database, Key, Seconds),
+            1;
+        [] ->
+            mnesia:dirty_write({Database, ?EXPIRE_KEY, {ordsets:new(), dict:new()}}),
+            redis_expire:insert(Database, Key, Seconds),
+            1;
+        _ ->
+            0
+    end.
+
+-spec del_expire_time(Db::atom(), Key::binary()) -> integer().
+del_expire_time(Database, Key) ->
+    case mnesia:dirty_read({Database, ?EXPIRE_KEY}) of
+        [{Database, ?EXPIRE_KEY, {_Set, Dict}}] ->
+            case dict:find(Key, Dict) of
+                {ok, _ExpTime} ->
+                    redis_expire:clear(Database, Key),
+                    1;
+                _ ->
+                    0
+            end;
+        _ ->
+            0
     end.

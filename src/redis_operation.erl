@@ -7,7 +7,7 @@
 
 %% API
 -export([enter_loop/3]).
--export([del/3, exists/3, keys/3]).
+-export([del/3, exists/3, keys/3, expire/3, ttl/3, persist/3]).
 -export([get/3, set/3, incr/3, incrby/3]).
 -export([rpush/3, lpop/3, lindex/3, lrange/3]).
 -export([sadd/3, sismember/3, smembers/3, srem/3]).
@@ -122,6 +122,60 @@ exists(Database, 1, [Key]) ->
     end;
 exists(_, _, _) ->
     redis_parser:reply_error(<<"ERR wrong number of arguments for 'exists' command">>).
+
+%% expire
+expire(Database, 2, [Key, Sec]) ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, _Value}] ->
+                redis_parser:reply_integer(
+                    redis_help:add_key_expire(Database, Key, Sec)
+                );
+            _ ->
+                redis_parser:reply_integer(0)
+        end
+    catch
+        _:_  ->
+            redis_parser:reply_integer(0)
+    end;
+expire(_, _, _) ->
+    redis_parser:reply_integer(0).
+
+%% ttl
+ttl(Database, 1, [Key]) ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, _Value}] ->
+                redis_parser:reply_integer(
+                    redis_help:get_expire_time(Database, Key)
+                );
+            _ ->
+                redis_parser:reply_integer(-2)
+        end
+    catch
+        _:_  ->
+            redis_parser:reply_integer(-2)
+    end;
+ttl(_, _, _) ->
+    redis_parser:reply_integer(-2).
+
+%% persist
+persist(Database, 1, [Key]) ->
+    try
+        case mnesia:dirty_read({Database, Key}) of
+            [{Database, Key, _Value}] ->
+                redis_parser:reply_integer(
+                    redis_help:del_expire_time(Database, Key)
+                );
+            _ ->
+                redis_parser:reply_integer(0)
+        end
+    catch
+        _:_  ->
+            redis_parser:reply_integer(0)
+    end;
+persist(_, _, _) ->
+    redis_parser:reply_integer(0).
 
 %% keys
 keys(Database, 1, [Pattern]) ->
