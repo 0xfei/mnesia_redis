@@ -3,6 +3,9 @@
 
 %% operation
 -define(EXISTS, exists).
+-define(EXPIRE, expire).
+-define(PERSIST, persist).
+-define(TTL, ttl).
 -define(GET, get).
 -define(SET, set).
 -define(DEL, del).

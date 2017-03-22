@@ -4,6 +4,7 @@
 -export([start/2, stop/1]).
 
 start(_Type, _Args) ->
+	% create tables
 	Tables = [
 		redis_mnesia_table0,
 		redis_mnesia_table1,
@@ -13,6 +14,8 @@ start(_Type, _Args) ->
 		redis_mnesia_table5
 	],
 	mnesia_create(Tables),
+
+	% start lisener
 	{ok, _} = ranch:start_listener(
 		?MODULE,
 		100,
@@ -21,6 +24,8 @@ start(_Type, _Args) ->
 		redis_interface,
 		[]
 	),
+
+	% create cleaner
 	mnesis_sup:start_link([Tables, 1000]).
 
 stop(_State) ->

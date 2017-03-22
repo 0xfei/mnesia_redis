@@ -225,7 +225,7 @@ del_orddict([Key|Left], Set, Dict, N) ->
 %% expire key manage
 -spec get_expire_time(Db::atom(), Key::binary()) -> integer().
 get_expire_time(Database, Key) ->
-    case mnesia:dirty_read({Database, ?EXPIRE_KEY}) of
+    case mnesis:read({Database, ?EXPIRE_KEY}) of
         [{Database, ?EXPIRE_KEY, {_Set, Dict}}] ->
             case dict:find(Key, Dict) of
                 {ok, ExpTime} ->
@@ -247,12 +247,12 @@ get_expire_time(Database, Key) ->
 -spec add_key_expire(Db::atom(), Key::binary(), Sec::binary()) -> 0 | 1.
 add_key_expire(Database, Key, BinSec) ->
     Seconds = erlang:system_time(1) + binary_to_integer(BinSec),
-    case mnesia:dirty_read({Database, ?EXPIRE_KEY}) of
+    case mnesis:read({Database, ?EXPIRE_KEY}) of
         [{Database, ?EXPIRE_KEY, {_Set, _Dict}}] ->
             redis_expire:insert(Database, Key, Seconds),
             1;
         [] ->
-            mnesia:dirty_write({Database, ?EXPIRE_KEY, {ordsets:new(), dict:new()}}),
+            mnesis:write({Database, ?EXPIRE_KEY, {ordsets:new(), dict:new()}}),
             redis_expire:insert(Database, Key, Seconds),
             1;
         _ ->
@@ -261,7 +261,7 @@ add_key_expire(Database, Key, BinSec) ->
 
 -spec del_expire_time(Db::atom(), Key::binary()) -> integer().
 del_expire_time(Database, Key) ->
-    case mnesia:dirty_read({Database, ?EXPIRE_KEY}) of
+    case mnesis:read({Database, ?EXPIRE_KEY}) of
         [{Database, ?EXPIRE_KEY, {_Set, Dict}}] ->
             case dict:find(Key, Dict) of
                 {ok, _ExpTime} ->

@@ -28,6 +28,7 @@
 }).
 
 enter_loop(Socket, Peername, Transport) ->
+    mnesis:init_mnesis(),
     loop(#state{socket=Socket, peername=Peername, transport=Transport}).
 
 loop(State = #state{socket=Socket, transport=Transport}) ->
@@ -110,7 +111,7 @@ do_transaction(Cmd, Num, Param, State=#state{trans=_, wlist=_Wlist, optlist=OptL
 %% exists
 exists(Database, 1, [Key]) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, _Value}] ->
                 redis_parser:reply_integer(1);
             _ ->
@@ -126,7 +127,7 @@ exists(_, _, _) ->
 %% expire
 expire(Database, 2, [Key, Sec]) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, _Value}] ->
                 redis_parser:reply_integer(
                     redis_help:add_key_expire(Database, Key, Sec)
@@ -144,7 +145,7 @@ expire(_, _, _) ->
 %% ttl
 ttl(Database, 1, [Key]) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, _Value}] ->
                 redis_parser:reply_integer(
                     redis_help:get_expire_time(Database, Key)
@@ -162,7 +163,7 @@ ttl(_, _, _) ->
 %% persist
 persist(Database, 1, [Key]) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, _Value}] ->
                 redis_parser:reply_integer(
                     redis_help:del_expire_time(Database, Key)
@@ -182,7 +183,7 @@ keys(Database, 1, [Pattern]) ->
     try
         redis_parser:reply_multi(
             [redis_parser:reply_single(K) ||
-                K <- mnesia:dirty_all_keys(Database), redis_help:pattern_match(K, Pattern)]
+                K <- mnesis:all_keys(Database), redis_help:pattern_match(K, Pattern)]
         )
     catch
         _:_ ->
@@ -198,9 +199,9 @@ del(Database, N, Keys) ->
 del_int(_Database, 0, [], N) ->
     redis_parser:reply_integer(N);
 del_int(Database, N, [Key|Left], Num) ->
-    case mnesia:dirty_read({Database, Key}) of
+    case mnesis:read({Database, Key}) of
         [{Database, Key, _Value}] ->
-            mnesia:dirty_delete({Database, Key}),
+            mnesis:delete({Database, Key}),
             del_int(Database, N-1, Left, Num+1);
         _ ->
             del_int(Database, N-1, Left, Num)
@@ -213,7 +214,7 @@ del_int(Database, N, [Key|Left], Num) ->
 %% get
 get(Database, 1, [Key]) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, Value}] when is_binary(Value)->
                 redis_parser:reply_single(Value);
             [] ->
@@ -232,7 +233,7 @@ get(_, _, _) ->
 %% todo: expire
 set(Database, 2, [Key, Value]) ->
     try
-        case mnesia:dirty_write({Database, Key, Value}) of
+        case mnesis:write({Database, Key, Value}) of
             ok ->
                 redis_parser:reply_status(<<"OK">>);
             _ ->
@@ -248,12 +249,12 @@ set(_, _, _) ->
 %% incr
 incr(Database, 1, [Key]) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, Value}] ->
                 NewValue = redis_help:number_to_binary(
                     redis_help:binary_to_number(Value) + 1
                 ),
-                mnesia:dirty_write({Database, Key, NewValue}),
+                mnesis:write({Database, Key, NewValue}),
                 redis_parser:reply_single(NewValue);
             _ ->
                 redis_parser:reply_error(<<"ERR Operation against a key holding the wrong kind of value">>)
@@ -268,13 +269,13 @@ incr(_, _, _) ->
 %% incrby
 incrby(Database, 2, [Key, Incr]) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, Value}] ->
                 NewValue = redis_help:number_to_binary(
                     redis_help:binary_to_number(Value) +
                     redis_help:binary_to_number(Incr)
                 ),
-                mnesia:dirty_write({Database, Key, NewValue}),
+                mnesis:write({Database, Key, NewValue}),
                 redis_parser:reply_single(NewValue);
             _ ->
                 redis_parser:reply_error(<<"ERR Operation against a key holding the wrong kind of value">>)
@@ -293,12 +294,12 @@ incrby(_, _, _) ->
 %% rpush
 rpush(Database, N, [Key | Left]) when N > 1 ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, [M|Value]}] when is_integer(M) ->
-                mnesia:dirty_write({Database, Key, [N-1+M|redis_help:join_list(Value,Left)]}),
+                mnesis:write({Database, Key, [N-1+M|redis_help:join_list(Value,Left)]}),
                 redis_parser:reply_integer(N-1+M);
             [] ->
-                mnesia:dirty_write({Database, Key, [N-1|Left]}),
+                mnesis:write({Database, Key, [N-1|Left]}),
                 redis_parser:reply_integer(N-1);
             _ ->
                 redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
@@ -314,12 +315,12 @@ rpush(_, _, _) ->
 %% todo: maybe more check
 lpop(Database, 1, [Key]) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, [1 , H]}] ->
-                mnesia:dirty_delete({Database, Key}),
+                mnesis:delete({Database, Key}),
                 redis_parser:reply_single(H);
             [{Database, Key, [M, H | Value]}] when is_integer(M)->
-                mnesia:dirty_write({Database, Key, [M-1 | Value]}),
+                mnesis:write({Database, Key, [M-1 | Value]}),
                 redis_parser:reply_single(H);
             _ ->
                 redis_parser:reply_single(<<>>)
@@ -334,7 +335,7 @@ lpop(_, _, _) ->
 %% lindex
 lindex(Database, 2, [Key, SIndex]) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, [M | List]}] when is_integer(M) ->
                 Index = redis_help:calc_index(SIndex, M),
                 redis_parser:reply_single(lists:nth(Index, List));
@@ -351,7 +352,7 @@ lindex(_, _, _) ->
 %% lrange
 lrange(Database, 3, [Key, Start, End]) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, [M | List]}] when is_integer(M) ->
                 S = redis_help:calc_index(Start, M),
                 T = redis_help:calc_index(End, M),
@@ -381,14 +382,14 @@ lrange(_, _, _) ->
 %% sadd
 sadd(Database, N, [Key|Value]) when N > 1->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, Set}] ->
                 {Number, NewSet} = redis_help:add_elements(Value, Set, 0),
-                mnesia:dirty_write({Database, Key, NewSet}),
+                mnesis:write({Database, Key, NewSet}),
                 redis_parser:reply_integer(Number);
             [] ->
                 {Number, NewSet} = redis_help:add_elements(Value, sets:new(), 0),
-                mnesia:dirty_write({Database, Key, NewSet}),
+                mnesis:write({Database, Key, NewSet}),
                 redis_parser:reply_integer(Number);
             _ ->
                 redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
@@ -403,7 +404,7 @@ sadd(_, _, _) ->
 %% SISMEMBER
 sismember(Database, 2, [Key, Value]) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, Set}] ->
                 case sets:is_element(Value, Set) of
                     true ->
@@ -426,7 +427,7 @@ sismember(_, _, _) ->
 %% smembers
 smembers(Database, 1, [Key]) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, Set}] ->
                 redis_parser:reply_multi(
                     [redis_parser:reply_single(K) || K <- sets:to_list(Set)]
@@ -446,10 +447,10 @@ smembers(_, _, _) ->
 %% srem
 srem(Database, N, [Key|Value]) when N > 1->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, Set}] ->
                 {Number, NewSet} = redis_help:remove_elements(Value, Set, 0),
-                mnesia:dirty_write({Database, Key, NewSet}),
+                mnesis:write({Database, Key, NewSet}),
                 redis_parser:reply_integer(Number);
             [] ->
                 redis_parser:reply_integer(0);
@@ -471,7 +472,7 @@ srem(_, _, _) ->
 %% hset
 hset(Database, 3, [Key, K, V]) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, Map}] ->
                 N = case maps:is_key(K, Map) of
                         true ->
@@ -479,10 +480,10 @@ hset(Database, 3, [Key, K, V]) ->
                         _ ->
                             1
                     end,
-                mnesia:dirty_write({Database, Key, maps:put(K, V, Map)}),
+                mnesis:write({Database, Key, maps:put(K, V, Map)}),
                 redis_parser:reply_integer(N);
             [] ->
-                mnesia:dirty_write({Database, Key, maps:put(K, V, maps:new())}),
+                mnesis:write({Database, Key, maps:put(K, V, maps:new())}),
                 redis_parser:reply_integer(1);
             _ ->
                 redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
@@ -497,12 +498,12 @@ hset(_, _, _) ->
 %% hmset
 hmset(Database, N, [Key, K | KV]) when N rem 2 == 1 ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, Map}] ->
-                mnesia:dirty_write({Database, Key, redis_help:add_hash([K | KV], Map)}),
+                mnesis:write({Database, Key, redis_help:add_hash([K | KV], Map)}),
                 redis_parser:reply_status(<<"OK">>);
             [] ->
-                mnesia:dirty_write({Database, Key, redis_help:add_hash([K | KV], maps:new())}),
+                mnesis:write({Database, Key, redis_help:add_hash([K | KV], maps:new())}),
                 redis_parser:reply_status(<<"OK">>);
             _ ->
                 redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
@@ -517,7 +518,7 @@ hmset(_, _, _) ->
 %% hget
 hget(Database, 2, [Key, K]) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, Map}] ->
                 N = case maps:is_key(K, Map) of
                         true ->
@@ -541,7 +542,7 @@ hget(_, _, _) ->
 %% hmget
 hmget(Database, N, [Key | Ks]) when N > 1 ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, Map}] ->
                 redis_parser:reply_multi(
                     lists:map(
@@ -573,7 +574,7 @@ hmget(_, _, _) ->
 hincrby(Database, 3, [Key, K, Incr]) ->
     try
         Increment = binary_to_integer(Incr),
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, Map}] ->
                 NewValue = case maps:is_key(K, Map) of
                                true ->
@@ -583,10 +584,10 @@ hincrby(Database, 3, [Key, K, Incr]) ->
                                _ ->
                                    Incr
                            end,
-                mnesia:dirty_write({Database, Key, maps:put(K, NewValue, Map)}),
+                mnesis:write({Database, Key, maps:put(K, NewValue, Map)}),
                 redis_parser:reply_single(NewValue);
             [] ->
-                mnesia:dirty_write({Database, Key, maps:put(K, Incr, maps:new())}),
+                mnesis:write({Database, Key, maps:put(K, Incr, maps:new())}),
                 redis_parser:reply_single(Incr);
             _ ->
                 redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
@@ -601,7 +602,7 @@ hincrby(_, _, _) ->
 %% hexists
 hexists(Database, 2, [Key, K]) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, Map}] ->
                 case maps:is_key(K, Map) of
                     true ->
@@ -624,7 +625,7 @@ hexists(_, _, _) ->
 %% hgetall
 hgetall(Database, 1, [Key]) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, Map}] ->
                 redis_parser:reply_multi(
                     lists:flatten(
@@ -645,10 +646,10 @@ hgetall(_, _, _) ->
 %% hdel
 hdel(Database, N, [Key|Value]) when N > 1->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, Map}] ->
                 {Number, NewMap} = redis_help:remove_hash(Value, Map, 0),
-                mnesia:dirty_write({Database, Key, NewMap}),
+                mnesis:write({Database, Key, NewMap}),
                 redis_parser:reply_integer(Number);
             [] ->
                 redis_parser:reply_integer(0);
@@ -669,14 +670,14 @@ hdel(_, _, _) ->
 %% zadd
 zadd(Database, N, [Key | Value]) when N rem 2 == 1 ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, {Set, Dict}}] ->
                 {Number, NewSet, NewDict} = redis_help:add_orddict(Value, Set, Dict, 0),
-                mnesia:dirty_write({Database, Key, {NewSet, NewDict}}),
+                mnesis:write({Database, Key, {NewSet, NewDict}}),
                 redis_parser:reply_integer(Number);
             [] ->
                 {Number, NewSet, NewDict} = redis_help:add_orddict(Value, ordsets:new(), dict:new(), 0),
-                mnesia:dirty_write({Database, Key, {NewSet, NewDict}}),
+                mnesis:write({Database, Key, {NewSet, NewDict}}),
                 redis_parser:reply_integer(Number);
             _ ->
                 redis_parser:reply_error(<<"WRONGTYPE Operation against a key holding the wrong kind of value">>)
@@ -691,10 +692,10 @@ zadd(_, _, _) ->
 %% zrem
 zrem(Database, N, [Key | Value]) when N > 1 ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, {Set, Dict}}] ->
                 {Number, NewSet, NewDict} = redis_help:del_orddict(Value, Set, Dict, 0),
-                mnesia:dirty_write({Database, Key, {NewSet, NewDict}}),
+                mnesis:write({Database, Key, {NewSet, NewDict}}),
                 redis_parser:reply_integer(Number);
             [] ->
                 redis_parser:reply_integer(0);
@@ -711,7 +712,7 @@ zrem(_, _, _) ->
 %% zscore
 zscore(Database, 2, [Key , DictKey]) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, {_Set, Dict}}] ->
                 Score = case dict:find(DictKey, Dict) of
                             {ok, Value} ->
@@ -736,14 +737,14 @@ zscore(_, _, _) ->
 zincrby(Database, 3, [Key, Incr, DictKey]) ->
     try
         Increment = redis_help:binary_to_number(Incr),
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, {Set, Dict}}] ->
                 Score = case dict:find(DictKey, Dict) of
                             {ok, Value} ->
                                 OldScore = redis_help:binary_to_number(Value),
                                 NewScore = OldScore + Increment,
                                 NewValue = redis_help:number_to_binary(NewScore),
-                                mnesia:dirty_write({
+                                mnesis:write({
                                     Database, Key,
                                     {ordsets:add_element({NewScore, NewValue, DictKey},
                                         ordsets:del_element({OldScore, Value, DictKey}, Set)),
@@ -751,7 +752,7 @@ zincrby(Database, 3, [Key, Incr, DictKey]) ->
                                 }),
                                 NewValue;
                             _ ->
-                                mnesia:dirty_write({
+                                mnesis:write({
                                     Database, Key,
                                     {ordsets:add_element({Increment, Incr, DictKey}, Set),
                                     dict:store(DictKey, Incr, Dict)}
@@ -799,7 +800,7 @@ zrevrange(_, _, _) ->
 
 zrange_int(Database, Key, Start, End, Withscore, Fun) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, {Set, _Dict}}] ->
                 M = ordsets:size(Set),
                 S = redis_help:calc_index(Start, M),
@@ -855,7 +856,7 @@ zrevrangebyscore(_, _, _) ->
 
 zrangebyscore_int(Database, Key, Start, End, Withscore, Fun) ->
     try
-        case mnesia:dirty_read({Database, Key}) of
+        case mnesis:read({Database, Key}) of
             [{Database, Key, {Set, _Dict}}] ->
                 M = ordsets:size(Set),
                 List = ordsets:to_list(Set),
