@@ -6,6 +6,7 @@
 start(_Type, _Args) ->
 	% create tables
 	Tables = [
+		redis_watch,
 		redis_mnesia_table0,
 		redis_mnesia_table1,
 		redis_mnesia_table2,

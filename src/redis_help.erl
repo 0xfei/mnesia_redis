@@ -232,7 +232,7 @@ get_expire_time(Database, Key) ->
                     Now = erlang:system_time(1),
                     if
                         ExpTime =< Now ->
-                            redis_expire:remove(Database, Key),
+                            mnesis_server:remove(Database, Key),
                             -2;
                         true ->
                             ExpTime - Now
@@ -249,11 +249,11 @@ add_key_expire(Database, Key, BinSec) ->
     Seconds = erlang:system_time(1) + binary_to_integer(BinSec),
     case mnesis:read({Database, ?EXPIRE_KEY}) of
         [{Database, ?EXPIRE_KEY, {_Set, _Dict}}] ->
-            redis_expire:insert(Database, Key, Seconds),
+            mnesis_server:insert(Database, Key, Seconds),
             1;
         [] ->
             mnesis:write({Database, ?EXPIRE_KEY, {ordsets:new(), dict:new()}}),
-            redis_expire:insert(Database, Key, Seconds),
+            mnesis_server:insert(Database, Key, Seconds),
             1;
         _ ->
             0
@@ -265,7 +265,7 @@ del_expire_time(Database, Key) ->
         [{Database, ?EXPIRE_KEY, {_Set, Dict}}] ->
             case dict:find(Key, Dict) of
                 {ok, _ExpTime} ->
-                    redis_expire:clear(Database, Key),
+                    mnesis_server:clear(Database, Key),
                     1;
                 _ ->
                     0

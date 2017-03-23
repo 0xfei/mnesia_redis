@@ -22,7 +22,6 @@
     database = redis_mnesia_table0 :: atom(),
     trans = false :: boolean(),
     error = false :: boolean(),
-    dirty = false :: boolean(),
     wlist = []:: list(),
     optlist = []:: [{atom(), integer(), [binary()]}]
 }).
@@ -53,7 +52,8 @@ do_operation(Cmd, Num, Param, State=#state{database=Database}) ->
         Func = binary_to_existing_atom(Cmd, latin1),
         case erlang:function_exported(redis_operation, Func, 3) of
             false ->
-                {redis_parser:reply_error(<<"ERR unknown command '", Cmd/binary,  "' ">>), State};
+                {redis_parser:reply_error(<<"ERR unknown command '", Cmd/binary,  "' ">>),
+                    State#state{error=true}};
             true ->
                 case do_transaction(Func, Num, Param, State) of
                     {ok, old} ->
@@ -201,6 +201,7 @@ del_int(_Database, 0, [], N) ->
 del_int(Database, N, [Key|Left], Num) ->
     case mnesis:read({Database, Key}) of
         [{Database, Key, _Value}] ->
+            mnesis_server:clear(Database, Key),
             mnesis:delete({Database, Key}),
             del_int(Database, N-1, Left, Num+1);
         _ ->

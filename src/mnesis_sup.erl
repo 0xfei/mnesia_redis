@@ -9,7 +9,7 @@ start_link([Tables, Time]) ->
 
 init([Tables, Time]) ->
     Procs = [
-        {redis_expire, {redis_expire, start_link, [Tables, Time]},
-            permanent, 5000, worker, [redis_expire]}
+        {mnesis_server, {mnesis_server, start_link, [Tables, Time]},
+            permanent, 5000, worker, [mnesis_server]}
     ],
 	{ok, {{one_for_one, 1, 5}, Procs}}.

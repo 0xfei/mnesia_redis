@@ -1,4 +1,4 @@
--module(redis_expire).
+-module(mnesis_server).
 -behavior(gen_server).
 
 %% API
@@ -14,22 +14,39 @@
 
 %% export
 -export([insert/3, remove/2, clear/2]).
+-export([watch/3, unwatch/3, clear_watch/2, check/2, write/2]).
 
 -record(state, {db, time}).
 
+-define(WATCH_TABLE, redis_watch).
 -define(EXPIRE_KEY, expire).
--define(TAB, ?MODULE).
 
 start_link(Database, Time) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [Database, Time], []).
 
-%% interface
+%% expire
 insert(Db, Key, Value) ->
     gen_server:cast(?MODULE, {add, Db, Key, Value}).
 remove(Db, Key) ->
     gen_server:cast(?MODULE, {del, Db, Key}).
 clear(Db, Key) ->
     gen_server:cast(?MODULE, {cls, Db, Key}).
+
+%% watch
+watch(Pid, Database, Key) ->
+    gen_server:cast(?MODULE, {insert, Pid, Database, Key}).
+
+unwatch(Pid, Database, Key) ->
+    gen_server:cast(?MODULE, {remove, Pid, Database, Key}).
+
+clear_watch(Pid, Database) ->
+    gen_server:cast(?MODULE, {clear_watch, Pid, Database}).
+
+write(Database, Key) ->
+    gen_server:cast(?MODULE, {write, Database, Key}).
+
+check(Pid, Database) ->
+    gen_server:call(?MODULE, {check, Pid, Database}).
 
 %% callback
 init([Database, Time]) ->
