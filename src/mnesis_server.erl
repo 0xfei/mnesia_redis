@@ -34,8 +34,8 @@ clear(Db, Key) ->
     gen_server:cast(?MODULE, {cls_expire_key, Db, Key}).
 
 %% watch
-insert_watch(Pid, Database, Key) ->
-    gen_server:cast(?MODULE, {insert_watch, Pid, Database, Key}).
+insert_watch(Pid, Database, Keys) ->
+    gen_server:cast(?MODULE, {insert_watch, Pid, Database, Keys}).
 
 remove_watch(Pid, Database, Key) ->
     gen_server:cast(?MODULE, {remove_watch, Pid, Database, Key}).
@@ -85,8 +85,8 @@ handle_cast({cls_expire_key, Database, Key}, State=#state{time=Time}) ->
 handle_cast({write_watch, Database, Key}, State=#state{time=Time}) ->
     do_write_watch(Database, Key),
     {noreply, State, Time};
-handle_cast({insert_watch, Pid, Database, Key}, State=#state{time=Time}) ->
-    do_insert_watch(Pid, Database, Key),
+handle_cast({insert_watch, Pid, Database, Keys}, State=#state{time=Time}) ->
+    insert_watch_keys(Pid, Database, Keys),
     {noreply, State, Time};
 handle_cast({remove_watch, Pid, Database, Key}, State=#state{time=Time}) ->
     do_remove_watch(Pid, Database, Key),
@@ -197,12 +197,21 @@ do_write_watch(Database, Key) ->
           end,
     mnesia:transaction(Fun).
 
-do_insert_watch(Pid, Database, Key) ->
+insert_watch_keys(_, _, []) ->
+    ok;
+insert_watch_keys(Pid, Database, [Key|Left]) ->
+    do_insert_watch_key(Pid, Database, Key),
+    insert_watch_keys(Pid, Database, Left).
+
+do_insert_watch_key(Pid, Database, Key) ->
     Fun = fun() ->
             case mnesia:read({?WATCH_TABLE, {Database, Key}}) of
                 [{?WATCH_TABLE, _, Set}] ->
                     mnesia:write({?WATCH_TABLE, {Database, Key},
                         sets:add_element(Pid, Set)});
+                [] ->
+                    mnesia:write({?WATCH_TABLE, {Database, Key},
+                        sets:add_element(Pid, sets:new())});
                 _ ->
                     ok
             end

@@ -23,10 +23,18 @@ read(K) ->
     F = get(read),
     mnesia:F(K).
 
+write(K = {Db, Key, _Value}) ->
+    mnesis_server:write_watch(Db,Key),
+    F = get(write),
+    mnesia:F(K);
 write(K) ->
     F = get(write),
     mnesia:F(K).
 
+delete(K = {Db, Key}) ->
+    mnesis_server:write_watch(Db,Key),
+    F = get(delete),
+    mnesia:F(K);
 delete(K) ->
     F = get(delete),
     mnesia:F(K).

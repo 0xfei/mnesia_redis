@@ -7,6 +7,7 @@
 
 %% API
 -export([enter_loop/3]).
+-export([multi/3, watch/3, unwatch/3, exec/3, discard/3]).
 -export([del/3, exists/3, keys/3, expire/3, ttl/3, persist/3]).
 -export([get/3, set/3, incr/3, incrby/3]).
 -export([rpush/3, lpop/3, lindex/3, lrange/3]).
@@ -22,7 +23,6 @@
     database = redis_mnesia_table0 :: atom(),
     trans = false :: boolean(),
     error = false :: boolean(),
-    wlist = []:: list(),
     optlist = []:: [{atom(), integer(), [binary()]}]
 }).
 
@@ -64,7 +64,8 @@ do_operation(Cmd, Num, Param, State=#state{database=Database}) ->
         end
     catch
         _Error:_Code ->
-            {redis_parser:reply_error(<<"ERR unknown command '", Cmd/binary,  "' ">>), State}
+            {redis_parser:reply_error(<<"ERR unknown command '", Cmd/binary,  "' ">>),
+                State#state{error=true}}
     end.
 
 %% check transaction operation
@@ -72,37 +73,68 @@ do_operation(Cmd, Num, Param, State=#state{database=Database}) ->
 %% 1.Check command before queued
 %% 2.Check watch list (need it ? ) after finish redis_operation.erl
 %% 3.Finish exec command
-do_transaction(Cmd, _Num, Param, State=#state{trans=false, wlist=Wlist}) ->
+do_transaction(Cmd, _Num, Param, State=#state{trans=false, database=Database}) ->
     case Cmd of
         multi ->
+            mnesis_server:multi_start(self()),
             {ok, new, redis_parser:reply_status(<<"OK">>), State#state{trans=true}};
         watch ->
-            {ok, new, redis_parser:reply_status(<<"OK">>), State#state{wlist=redis_help:join_list(Param,Wlist)}};
+            mnesis_server:insert_watch(self(), Database, Param),
+            {ok, new, redis_parser:reply_status(<<"OK">>), State};
         unwatch ->
-            {ok, new, redis_parser:reply_status(<<"OK">>), State#state{wlist=[]}};
+            mnesis_server:discard_watch(self()),
+            {ok, new, redis_parser:reply_status(<<"OK">>), State};
         exec ->
-            {ok, new, redis_parser:reply_error(<<"EXEC without MULTI">>), State#state{error=true}};
+            {ok, new, redis_parser:reply_error(<<"EXEC without MULTI">>), State};
         discard ->
-            {ok, new, redis_parser:reply_error(<<"DISCARD without MULTI">>), State#state{error=true}};
+            {ok, new, redis_parser:reply_error(<<"DISCARD without MULTI">>), State};
         _ ->
             {ok, old}
     end;
-do_transaction(Cmd, Num, Param, State=#state{trans=_, wlist=_Wlist, optlist=OptList}) ->
+do_transaction(Cmd, Num, Param, State=#state{trans=_, optlist=OptList, database=Database}) ->
     case Cmd of
         multi ->
             {ok, new, redis_parser:reply_error(<<"MULTI calls can not be nested">>), State#state{error=true}};
         watch ->
             {ok, new, redis_parser:reply_error(<<"WATCH inside MULTI is not allowed">>), State#state{error=true}};
         unwatch ->
-            {ok, new, redis_parser:reply_status(<<"OK">>), State#state{wlist=[]}};
+            mnesis_server:discard_watch(self()),
+            {ok, new, redis_parser:reply_status(<<"OK">>), State};
         exec ->
-            _Operation = lists:reverse(OptList),
-            {ok, new, redis_parser:reply_status(<<"OK">>), State#state{trans=false, wlist=[], optlist=[]}};
+            mnesis:enter_trans(),
+            Reply =
+                case mnesia:transaction(
+                    fun () ->
+                        clean = mnesis_server:check_watch(self()),
+                        [redis_operation:C(Database, N, P) ||
+                            {C, N, P} <- lists:reverse(OptList)]
+                    end)
+                of
+                    {atomic,Result} ->
+                        redis_parser:reply_multi(Result);
+                    _ ->
+                        redis_parser:reply_error(<<"EXECABORT">>)
+                end,
+            mnesis:leave_trans(),
+            {ok, new, Reply, State#state{trans=false, optlist=[]}};
         discard ->
-            {ok, new, redis_parser:reply_status(<<"OK">>), State#state{trans=false, wlist=[], optlist=[]}};
+            mnesis_server:discard_watch(self()),
+            {ok, new, redis_parser:reply_status(<<"OK">>), State#state{trans=false, optlist=[]}};
         Cmd ->
             {ok, new, redis_parser:reply_status(<<"QUEUED">>), State#state{optlist=[{Cmd, Num, Param}|OptList]}}
     end.
+
+%% empty
+multi(_A, _B, _C) ->
+    ok.
+watch(_A, _B, _C) ->
+    ok.
+unwatch(_A, _B, _C) ->
+    ok.
+exec(_A, _B, _C) ->
+    ok.
+discard(_A, _B, _C) ->
+    ok.
 
 %%
 %% key
