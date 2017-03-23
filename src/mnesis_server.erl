@@ -14,7 +14,8 @@
 
 %% export
 -export([insert/3, remove/2, clear/2]).
--export([watch/3, unwatch/3, clear_watch/2, check/2, write/2]).
+-export([insert_watch/3, remove_watch/3, write_watch/2, discard_watch/1]).
+-export([multi_start/1, check_watch/1]).
 
 -record(state, {db, time}).
 
@@ -26,27 +27,42 @@ start_link(Database, Time) ->
 
 %% expire
 insert(Db, Key, Value) ->
-    gen_server:cast(?MODULE, {add, Db, Key, Value}).
+    gen_server:cast(?MODULE, {add_expire_key, Db, Key, Value}).
 remove(Db, Key) ->
-    gen_server:cast(?MODULE, {del, Db, Key}).
+    gen_server:cast(?MODULE, {del_expire_key, Db, Key}).
 clear(Db, Key) ->
-    gen_server:cast(?MODULE, {cls, Db, Key}).
+    gen_server:cast(?MODULE, {cls_expire_key, Db, Key}).
 
 %% watch
-watch(Pid, Database, Key) ->
-    gen_server:cast(?MODULE, {insert, Pid, Database, Key}).
+insert_watch(Pid, Database, Key) ->
+    gen_server:cast(?MODULE, {insert_watch, Pid, Database, Key}).
 
-unwatch(Pid, Database, Key) ->
-    gen_server:cast(?MODULE, {remove, Pid, Database, Key}).
+remove_watch(Pid, Database, Key) ->
+    gen_server:cast(?MODULE, {remove_watch, Pid, Database, Key}).
 
-clear_watch(Pid, Database) ->
-    gen_server:cast(?MODULE, {clear_watch, Pid, Database}).
+write_watch(Database, Key) ->
+    gen_server:cast(?MODULE, {write_watch, Database, Key}).
 
-write(Database, Key) ->
-    gen_server:cast(?MODULE, {write, Database, Key}).
+discard_watch(Pid) ->
+    gen_server:cast(?MODULE, {discard_watch, Pid}).
 
-check(Pid, Database) ->
-    gen_server:call(?MODULE, {check, Pid, Database}).
+%% used in mnesia:transaction
+-spec check_watch(P::pid()) -> dirty | clean.
+check_watch(Pid) ->
+    case mnesia:read({?WATCH_TABLE, Pid}) of
+        [{?WATCH_TABLE, _, 1}] ->
+            mnesia:delete({?WATCH_TABLE, Pid}),
+            dirty;
+        _ ->
+            clean
+    end.
+
+-spec multi_start(P::pid()) -> {ok, atomic}.
+multi_start(Pid) ->
+    mnesia:transaction(
+        fun() -> mnesia:delete({?WATCH_TABLE, Pid}) end
+    ).
+
 
 %% callback
 init([Database, Time]) ->
@@ -55,20 +71,36 @@ init([Database, Time]) ->
 handle_call(_Request, _From, State) ->
     {reply, ignore, State}.
 
-handle_cast({add, Database, Key, Value}, State=#state{time=Time}) ->
+handle_cast({add_expire_key, Database, Key, Value}, State=#state{time=Time}) ->
     do_insert(Database, Key, Value),
     {noreply, State, Time};
-handle_cast({del, Database, Key}, State=#state{time=Time}) ->
+handle_cast({del_expire_key, Database, Key}, State=#state{time=Time}) ->
     do_remove(Database, Key),
     {noreply, State, Time};
-handle_cast({cls, Database, Key}, State=#state{time=Time}) ->
+handle_cast({cls_expire_key, Database, Key}, State=#state{time=Time}) ->
     do_clear(Database, Key),
     {noreply, State, Time};
+
+%% watch
+handle_cast({write_watch, Database, Key}, State=#state{time=Time}) ->
+    do_write_watch(Database, Key),
+    {noreply, State, Time};
+handle_cast({insert_watch, Pid, Database, Key}, State=#state{time=Time}) ->
+    do_insert_watch(Pid, Database, Key),
+    {noreply, State, Time};
+handle_cast({remove_watch, Pid, Database, Key}, State=#state{time=Time}) ->
+    do_remove_watch(Pid, Database, Key),
+    {noreply, State, Time};
+handle_cast({discard_watch, Pid}, State=#state{time=Time}) ->
+    do_discard_watch(Pid),
+    {noreply, State, Time};
+
 handle_cast(_Request, State=#state{time=Time}) ->
     {noreply, State, Time}.
 
 handle_info(timeout, State=#state{db=Database, time=Time}) ->
     regular_remove(Database),
+    regular_clean_watch(),
     {noreply, State, Time};
 handle_info(_Info, State=#state{time=Time}) ->
     {noreply, State, Time}.
@@ -150,3 +182,60 @@ loop_remove(Now, [Database|Left]) ->
         _:_ -> ok
     end,
     loop_remove(Now, Left).
+
+%% watch
+do_write_watch(Database, Key) ->
+    Fun = fun() ->
+            case mnesia:read({?WATCH_TABLE, {Database, Key}}) of
+                [{?WATCH_TABLE, _, Set}] ->
+                    Pids = sets:to_list(Set),
+                    mnesia:delete({?WATCH_TABLE, {Database, Key}}),
+                    [mnesia:write({?WATCH_TABLE, Pid, 1}) || Pid <- Pids];
+                _ ->
+                    ok
+            end
+          end,
+    mnesia:transaction(Fun).
+
+do_insert_watch(Pid, Database, Key) ->
+    Fun = fun() ->
+            case mnesia:read({?WATCH_TABLE, {Database, Key}}) of
+                [{?WATCH_TABLE, _, Set}] ->
+                    mnesia:write({?WATCH_TABLE, {Database, Key},
+                        sets:add_element(Pid, Set)});
+                _ ->
+                    ok
+            end
+          end,
+    mnesia:transaction(Fun).
+
+do_remove_watch(Pid, Database, Key) ->
+    Fun = fun() ->
+            case mnesia:read({?WATCH_TABLE, {Database, Key}}) of
+                [{?WATCH_TABLE, _, Set}] ->
+                    mnesia:write({?WATCH_TABLE, {Database, Key},
+                        sets:del_element(Pid, Set)});
+                _ ->
+                    ok
+            end
+          end,
+    mnesia:transaction(Fun).
+
+do_discard_watch(Pid) ->
+    Fun = fun() ->
+            [ case mnesia:read({?WATCH_TABLE, {Db, Key}}) of
+                  [{?WATCH_TABLE, _, Set}] ->
+                      mnesia:write({?WATCH_TABLE, {Db, Key}, sets:del_element(Pid, Set)});
+                  _ ->
+                      ok
+              end || {Db, Key} <-mnesia:all_keys(?WATCH_TABLE)],
+            mnesia:delete({?WATCH_TABLE, Pid})
+          end,
+    mnesia:transaction(Fun).
+
+regular_clean_watch() ->
+    Fun = fun() ->
+            [do_discard_watch(Pid) || Pid <-mnesia:all_keys(?WATCH_TABLE),
+                is_pid(Pid), erlang:is_process_alive(Pid) == false]
+          end,
+    mnesia:transaction(Fun).
