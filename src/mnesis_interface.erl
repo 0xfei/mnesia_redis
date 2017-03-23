@@ -1,7 +1,7 @@
--module(redis_interface).
+-module(mnesis_interface).
 -behaviour(ranch_protocol).
 
--include("redis_operation.hrl").
+-include("mnesis_operation.hrl").
 
 -export([start_link/4, init/4]).
 
@@ -13,4 +13,4 @@ start_link(Ref, Socket, Transport, Opts) ->
 init(Ref, Socket, Transport, _Opts) ->
     ok = Transport:setopts(Socket, [{active, once}]),
 	ok = ranch:accept_ack(Ref),
-	redis_operation:enter_loop(Socket, inet:peername(Socket), Transport).
+	mnesis_operation:enter_loop(Socket, inet:peername(Socket), Transport).

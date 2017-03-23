@@ -1,4 +1,4 @@
--module(mnesis).
+-module(mnesis_opt).
 
 %% API
 -export([init_mnesis/0, enter_trans/0, leave_trans/0]).

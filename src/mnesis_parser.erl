@@ -1,6 +1,6 @@
--module(redis_parser).
+-module(mnesis_parser).
 
--include("redis_operation.hrl").
+-include("mnesis_operation.hrl").
 
 -export([
     parse_data/1,
@@ -17,16 +17,16 @@
 -spec parse_data(Data::binary()) ->
     {Cmd::binary(), Num::integer(), Param::[binary()]}.
 parse_data(<<$*, Num/integer, Data/binary>>) when Num >= $0 andalso Num =< $9 ->
-    {Number, Binary} = redis_help:find_number(Data, Num-$0),
+    {Number, Binary} = mnesis_help:find_number(Data, Num-$0),
     [Cmd|Param] = parse_param(Binary, Number, []),
-    {Number - 1, redis_help:lower_binary(Cmd), Param}.
+    {Number - 1, mnesis_help:lower_binary(Cmd), Param}.
 
 -spec parse_param(Data::binary(), Count::integer(), Result::[binary()]) ->
     Result::[binary()].
 parse_param(<<>>, 0, Result) ->
     lists:reverse(Result);
 parse_param(<<$$, Num/integer, Data/binary>>, Count, Result) when Num >= $0 andalso Num =< $9 ->
-    {Number, Binary} = redis_help:find_number(Data, Num-$0),
+    {Number, Binary} = mnesis_help:find_number(Data, Num-$0),
     <<Param:Number/binary, $\r, $\n, Left/binary>> = Binary,
     parse_param(Left, Count-1, [Param | Result]).
 

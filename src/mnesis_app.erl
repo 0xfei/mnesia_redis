@@ -6,13 +6,13 @@
 start(_Type, _Args) ->
 	% create tables
 	Tables = [
-		redis_watch,
-		redis_mnesia_table0,
-		redis_mnesia_table1,
-		redis_mnesia_table2,
-		redis_mnesia_table3,
-		redis_mnesia_table4,
-		redis_mnesia_table5
+		mnesis_watch,
+		mnesis_mnesia_table0,
+		mnesis_mnesia_table1,
+		mnesis_mnesia_table2,
+		mnesis_mnesia_table3,
+		mnesis_mnesia_table4,
+		mnesis_mnesia_table5
 	],
 	mnesia_create(Tables),
 
@@ -22,7 +22,7 @@ start(_Type, _Args) ->
 		100,
 		ranch_tcp,
 		[{port, 9527}],
-		redis_interface,
+		mnesis_interface,
 		[]
 	),
 

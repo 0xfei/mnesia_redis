@@ -19,7 +19,7 @@
 
 -record(state, {db, time}).
 
--define(WATCH_TABLE, redis_watch).
+-define(WATCH_TABLE, mnesis_watch).
 -define(EXPIRE_KEY, expire).
 
 start_link(Database, Time) ->
