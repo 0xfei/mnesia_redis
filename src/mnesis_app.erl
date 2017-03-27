@@ -4,6 +4,27 @@
 -export([start/2, stop/1]).
 
 start(_Type, _Args) ->
+	% config
+	{ok, Config} = application:get_env(mnesis, server_config),
+	Port = case lists:keyfind(port, 1, Config) of
+			   {port, _Port} ->
+				   _Port;
+			   _ ->
+				   6319
+		   end,
+	Period = case lists:keyfind(period, 1, Config) of
+			   {period, _Period} ->
+				   _Period;
+			   _ ->
+				   1000
+		   end,
+	Num = case lists:keyfind(num, 1, Config) of
+			   {num, _Num} ->
+				   _Num;
+			   _ ->
+				   100
+		   end,
+
 	% create tables
 	Tables = [
 		mnesis_watch,
@@ -19,15 +40,15 @@ start(_Type, _Args) ->
 	% start lisener
 	{ok, _} = ranch:start_listener(
 		?MODULE,
-		100,
+		Num,
 		ranch_tcp,
-		[{port, 9527}],
+		[{port, Port}],
 		mnesis_interface,
 		[]
 	),
 
 	% create cleaner
-	mnesis_sup:start_link([Tables, 1000]).
+	mnesis_sup:start_link([Tables, Period]).
 
 stop(_State) ->
 	ok.
